@@ -1,14 +1,16 @@
-pub fn add(left: usize, right: usize) -> usize {
-    left + right
-}
+pub mod activation;
+pub mod f;
+pub mod manifolds;
+pub mod substrate;
+
+// pub type Population = VecDeque<Arc<Mutex<Manifold>>>;
+pub type Dataset = (Vec<Vec<f64>>, Vec<Vec<f64>>);
+pub type DatasetReference<'a> = (Vec<&'a Vec<f64>>, Vec<&'a Vec<f64>>);
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+        assert_eq!(true, true);
     }
 }
