@@ -54,10 +54,13 @@ impl Loss for BinaryCrossEntropy {
             .map(|(p, t)| {
                 // Avoid log(0) which is undefined
                 let p_clipped = p.clamp(1e-9, 1.0 - 1e-9);
-                t * p_clipped.ln() + (1.0 - t) * (1.0 - p_clipped).ln()
+                let v = t * p_clipped.ln() + (1.0 - t) * (1.0 - p_clipped).ln();
+                println!("{}", v);
+
+                v
             })
             .sum::<f64>()
-            / -(pred.len() as f64)
+            / (pred.len() as f64)
     }
 
     fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {

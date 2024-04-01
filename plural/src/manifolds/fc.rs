@@ -3,9 +3,10 @@ use std::collections::VecDeque;
 use std::ops::Range;
 use std::rc::Rc;
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array, Array1, Array2, Axis};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
+use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng, Rng};
 
 use crate::activation::{Activation, Transparent};
@@ -16,10 +17,10 @@ use crate::substrate::Substrate;
 pub struct Layer {
     pub x: Array2<f64>,
     pub wi: Array2<usize>,
-    pub bi: Array2<usize>,
+    pub bi: Array1<usize>,
     pub w: Array2<f64>,
-    pub b: Array2<f64>,
-    pub d_x: Array2<f64>,
+    pub b: Array1<f64>,
+    pub d_z: Array2<f64>,
     pub activation: Rc<dyn Activation>,
 }
 
@@ -28,16 +29,16 @@ impl Layer {
         pool_size: usize,
         x_shape: (usize, usize),
         w_shape: (usize, usize),
-        b_shape: (usize, usize),
+        b_shape: usize,
         activation: Rc<dyn Activation>,
     ) -> Layer {
         Layer {
             x: Array2::zeros(x_shape),
             wi: Array2::random(w_shape, Uniform::new(0, pool_size)),
-            bi: Array2::random(b_shape, Uniform::new(0, pool_size)),
+            bi: Array::random(b_shape, Uniform::new(0, pool_size)),
             w: Array2::zeros(w_shape),
-            b: Array2::zeros(b_shape),
-            d_x: Array2::zeros(w_shape),
+            b: Array::zeros(b_shape),
+            d_z: Array2::zeros(w_shape),
             activation,
         }
     }
@@ -51,9 +52,9 @@ impl Layer {
         self.w[[m, n]] = substrate[new_wi].get()
     }
 
-    pub fn shift_bias(&mut self, m: usize, n: usize, new_bi: usize, substrate: &Substrate) {
-        self.bi[[m, n]] = new_bi;
-        self.b[[m, n]] = substrate[new_bi].get()
+    pub fn shift_bias(&mut self, m: usize, new_bi: usize, substrate: &Substrate) {
+        self.bi[m] = new_bi;
+        self.b[m] = substrate[new_bi].get()
     }
 
     pub fn forward(&mut self, x: Array2<f64>) -> Array2<f64> {
@@ -61,23 +62,15 @@ impl Layer {
         let z = x.dot(&self.w) + &self.b;
         let a_z = z.map(|x| self.activation.a(*x));
         let d_z = z.map(|x| self.activation.d(*x));
-        let d_x = d_z.dot(&self.w.t());
-        self.d_x = d_x;
+        self.d_z = d_z;
         a_z
     }
 
     pub fn backward(&mut self, grad_output: Array2<f64>, learning_rate: f64) -> Array2<f64> {
-        println!("grad output {:?} d_x {:?}", grad_output.shape(), self.d_x.shape());
-        let grad_z = grad_output * &self.d_x;
-
-        println!("grad z {:?} w {:?}", grad_z.shape(), self.w.shape());
-        let grad_input = grad_z.dot(&self.w);
-
-        println!("x {:?} grad_z {:?}", self.x.shape(), grad_z.t().shape());
-        let grad_w = self.x.dot(&grad_z.t());
-
-        let grad_b = grad_z.sum_axis(Axis(0)).insert_axis(Axis(0));
-        println!("{:?}", grad_b.shape());
+        let grad_z = grad_output * &self.d_z;
+        let grad_input = grad_z.dot(&self.w.t());
+        let grad_w = self.x.t().dot(&grad_z);
+        let grad_b = grad_z.sum_axis(Axis(0));
 
         self.w -= &(grad_w * learning_rate);
         self.b -= &(grad_b * learning_rate);
@@ -100,6 +93,7 @@ pub struct Manifold {
     epochs: usize,
     learning_rate: f64,
     sample_size: usize,
+    losses: Vec<f64>,
 }
 
 impl Manifold {
@@ -115,6 +109,7 @@ impl Manifold {
             epochs: 1000,
             learning_rate: 0.05,
             sample_size: 10,
+            losses: vec![],
         }
     }
 
@@ -142,6 +137,7 @@ impl Manifold {
             epochs: 1000,
             learning_rate: 0.05,
             sample_size: 1,
+            losses: vec![],
         }
     }
 
@@ -165,15 +161,20 @@ impl Manifold {
         self
     }
 
+    pub fn set_sample_size(&mut self, sample_size: usize) -> &mut Self {
+        self.sample_size = sample_size;
+        self
+    }
+
     pub fn weave(&mut self, activation: Rc<dyn Activation>) -> &mut Self {
         let mut x_shape = (1, self.d_in);
         let mut w_shape: (usize, usize);
-        let mut b_shape: (usize, usize);
+        let mut b_shape: usize;
         let mut p_dim = self.d_in;
 
         for layer_size in self.layers.iter() {
             w_shape = (p_dim, *layer_size);
-            b_shape = (x_shape.0, w_shape.1);
+            b_shape = w_shape.1;
 
             self.web.push(Layer::new(
                 self.pool_size,
@@ -183,12 +184,12 @@ impl Manifold {
                 Rc::clone(&activation),
             ));
             p_dim = *layer_size;
-            x_shape = b_shape;
+            x_shape = (1, w_shape.1);
         }
 
         let transparent_out = Transparent::new();
         let w_shape = (p_dim, self.d_out);
-        let b_shape = (x_shape.0, w_shape.1);
+        let b_shape = w_shape.1;
 
         self.web.push(Layer::new(
             self.pool_size,
@@ -216,7 +217,6 @@ impl Manifold {
     pub fn forward(&mut self, xv: Vec<f64>) -> Array1<f64> {
         let mut x = self.prepare(xv);
         for layer in self.web.iter_mut() {
-            println!("{:?}", x.shape());
             x = layer.forward(x);
         }
         let shape = x.len();
@@ -233,20 +233,15 @@ impl Manifold {
         let y_target = Array1::from(y);
         let grad_output_i = loss.d(y_pred, y_target);
 
-        println!("Loss grad done.");
-
-        let grad_output_shape = (grad_output_i.len(), 1);
+        let grad_output_shape = (1, grad_output_i.len());
         let mut grad_output = grad_output_i.into_shape(grad_output_shape).unwrap();
 
-        println!("Loss grad reshape done.");
-
-        for (i, layer) in self.web.iter_mut().rev().enumerate() {
+        for layer in self.web.iter_mut().rev() {
             grad_output = layer.backward(grad_output, learning_rate);
-            println!("{} Layer grad done.", i);
         }
     }
 
-    pub fn train(&mut self, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) {
+    pub fn train(&mut self, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> &mut Self {
         let xy = x
             .into_iter()
             .zip(y.into_iter())
@@ -263,17 +258,31 @@ impl Manifold {
                 let (x, y) = xy.clone();
 
                 let y_pred = self.forward(x);
-                println!("Forward done.");
                 total_loss.push(self.loss.a(y_pred.clone(), Array1::from(y.clone())));
-                println!("Loss done.");
                 self.backwards(y_pred, y, Rc::clone(&self.loss), self.learning_rate);
-                println!("Backward done.");
             }
 
             let ct = total_loss.len() as f64;
             let avg_loss = total_loss.into_iter().fold(0., |a, v| a + v) / ct;
 
+            self.losses.push(avg_loss);
+
             println!("({}/{}) Loss = {}", epoch, self.epochs, avg_loss);
         }
+
+        self
+    }
+
+    pub fn loss_graph(&mut self) -> &mut Self {
+        let mut plot = Plot::new();
+
+        let x = (0..self.losses.len()).collect();
+
+        let trace = Bar::new(x, self.losses.clone());
+        plot.add_trace(trace);
+        plot.write_html("loss.html");
+        plot.show();
+
+        self
     }
 }
