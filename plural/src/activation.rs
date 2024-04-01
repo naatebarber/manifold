@@ -1,34 +1,55 @@
-use serde::{Deserialize, Serialize};
+use std::fmt::Debug;
+use std::rc::Rc;
 
-pub struct Activation;
+pub trait Activation {
+    fn a(&self, x: f64) -> f64;
+    fn d(&self, x: f64) -> f64;
+}
 
-impl Activation {
-    pub fn relu(x: f64) -> f64 {
+impl Debug for dyn Activation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "ActivationFn")
+    }
+}
+
+pub struct Relu;
+
+impl Relu {
+    pub fn new() -> Rc<Relu> {
+        Rc::new(Relu)
+    }
+}
+
+impl Activation for Relu {
+    fn a(&self, x: f64) -> f64 {
         if x < 0. {
             return 0.;
         }
         x
     }
 
-    pub fn leaky_relu(x: f64) -> f64 {
+    fn d(&self, x: f64) -> f64 {
         if x < 0. {
-            return 0.1 * x;
+            return 0.;
         }
-        x
-    }
-
-    pub fn elu(x: f64) -> f64 {
-        if x < 0. {
-            return x.exp() - 1.;
-        }
-        x
+        1.
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub enum ActivationType {
-    Relu,
-    LeakyRelu,
-    Elu,
-    None,
+pub struct Transparent;
+
+impl Transparent {
+    pub fn new() -> Rc<Transparent> {
+        Rc::new(Transparent)
+    }
+}
+
+impl Activation for Transparent {
+    fn a(&self, x: f64) -> f64 {
+        x
+    }
+
+    fn d(&self, x: f64) -> f64 {
+        x
+    }
 }
