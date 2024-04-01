@@ -1,5 +1,6 @@
 pub mod activation;
 pub mod f;
+pub mod loss;
 pub mod manifolds;
 pub mod substrate;
 
