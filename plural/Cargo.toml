@@ -9,6 +9,7 @@ edition = "2021"
 mnist = "0.6.0"
 ndarray = "0.15.6"
 ndarray-rand = "0.14.0"
+ndarray-stats = "0.5.1"
 plotly = "0.8.4"
 rand = "0.8.5"
 serde = { version = "1.0.197", features = [ "derive", "rc" ] }

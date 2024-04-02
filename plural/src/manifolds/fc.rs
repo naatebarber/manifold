@@ -9,7 +9,7 @@ use ndarray_rand::RandomExt;
 use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng, Rng};
 
-use crate::activation::{Activation, Transparent};
+use crate::activation::{Activation, Identity, Relu};
 use crate::loss::{Loss, MSE};
 use crate::substrate::Substrate;
 
@@ -60,8 +60,8 @@ impl Layer {
     pub fn forward(&mut self, x: Array2<f64>) -> Array2<f64> {
         self.x = x.clone();
         let z = x.dot(&self.w) + &self.b;
-        let a_z = z.map(|x| self.activation.a(*x));
-        let d_z = z.map(|x| self.activation.d(*x));
+        let a_z = self.activation.a(z.clone());
+        let d_z = self.activation.d(z.clone());
         self.d_z = d_z;
         a_z
     }
@@ -90,6 +90,8 @@ pub struct Manifold {
     web: Web,
     verbose: bool,
     loss: Rc<dyn Loss>,
+    hidden_activation: Rc<dyn Activation>,
+    output_activation: Rc<dyn Activation>,
     epochs: usize,
     learning_rate: f64,
     sample_size: usize,
@@ -106,6 +108,8 @@ impl Manifold {
             web: Web::new(),
             verbose: false,
             loss: MSE::new(),
+            hidden_activation: Relu::new(),
+            output_activation: Identity::new(),
             epochs: 1000,
             learning_rate: 0.05,
             sample_size: 10,
@@ -134,6 +138,8 @@ impl Manifold {
             layers,
             verbose: false,
             loss: MSE::new(),
+            hidden_activation: Relu::new(),
+            output_activation: Identity::new(),
             epochs: 1000,
             learning_rate: 0.05,
             sample_size: 1,
@@ -148,6 +154,16 @@ impl Manifold {
 
     pub fn set_loss(&mut self, loss: Rc<dyn Loss>) -> &mut Self {
         self.loss = loss;
+        self
+    }
+
+    pub fn set_hidden_activation(&mut self, activation: Rc<dyn Activation>) -> &mut Self {
+        self.hidden_activation = activation;
+        self
+    }
+
+    pub fn set_output_activation(&mut self, activation: Rc<dyn Activation>) -> &mut Self {
+        self.output_activation = activation;
         self
     }
 
@@ -166,7 +182,7 @@ impl Manifold {
         self
     }
 
-    pub fn weave(&mut self, activation: Rc<dyn Activation>) -> &mut Self {
+    pub fn weave(&mut self) -> &mut Self {
         let mut x_shape = (1, self.d_in);
         let mut w_shape: (usize, usize);
         let mut b_shape: usize;
@@ -181,13 +197,12 @@ impl Manifold {
                 x_shape,
                 w_shape,
                 b_shape,
-                Rc::clone(&activation),
+                Rc::clone(&self.hidden_activation),
             ));
             p_dim = *layer_size;
             x_shape = (1, w_shape.1);
         }
 
-        let transparent_out = Transparent::new();
         let w_shape = (p_dim, self.d_out);
         let b_shape = w_shape.1;
 
@@ -196,7 +211,7 @@ impl Manifold {
             x_shape,
             w_shape,
             b_shape,
-            transparent_out,
+            Rc::clone(&self.output_activation),
         ));
         self
     }

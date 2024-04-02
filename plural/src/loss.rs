@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::rc::Rc;
 
 use ndarray::Array1;
+use ndarray_stats::QuantileExt;
 
 pub trait Loss {
     fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64;
@@ -24,18 +25,63 @@ impl MSE {
 
 impl Loss for MSE {
     fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
-        pred.iter()
-            .zip(target.iter())
-            .map(|(p, t)| (p - t).powi(2))
-            .fold(0., |a, v| a + v)
-            / pred.len() as f64
+        let len = pred.len();
+        let diff = pred - target;
+        let exp = diff.mapv_into(|x| x.powi(2));
+        let sum = exp.sum();
+        sum / len as f64
     }
 
     fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {
-        pred.iter()
-            .zip(target.iter())
-            .map(|(p, t)| ((p - t) * 2.) / pred.len() as f64)
-            .collect::<Array1<f64>>()
+        let len = pred.len();
+        let diff = pred - target;
+        let dx = diff.mapv_into(|x| (x * 2.) / len as f64);
+        dx
+    }
+}
+
+pub struct CategoricalCrossEntropy;
+
+impl CategoricalCrossEntropy {
+    pub fn new() -> Rc<CategoricalCrossEntropy> {
+        Rc::new(CategoricalCrossEntropy)
+    }
+}
+
+impl Loss for CategoricalCrossEntropy {
+    fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
+        let log_pred = pred.map(|x| x.ln());
+        let prod = log_pred * target;
+        -prod.sum()
+    }
+
+    fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {
+        pred - target
+    }
+}
+
+pub struct SoftmaxCrossEntropy;
+
+impl SoftmaxCrossEntropy {
+    pub fn new() -> Rc<SoftmaxCrossEntropy> {
+        Rc::new(SoftmaxCrossEntropy)
+    }
+}
+
+impl Loss for SoftmaxCrossEntropy {
+    fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
+        let max = pred.max().unwrap();
+        let exps = pred.map(|v| (v - max).exp());
+        let sum_exps = exps.sum();
+        let softmax_pred = exps.map(|v| v / sum_exps);
+
+        let log_pred = softmax_pred.map(|x| x.ln());
+        let prod = log_pred * target;
+        -prod.sum()
+    }
+
+    fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {
+        pred - target
     }
 }
 
@@ -55,8 +101,6 @@ impl Loss for BinaryCrossEntropy {
                 // Avoid log(0) which is undefined
                 let p_clipped = p.clamp(1e-9, 1.0 - 1e-9);
                 let v = t * p_clipped.ln() + (1.0 - t) * (1.0 - p_clipped).ln();
-                println!("{}", v);
-
                 v
             })
             .sum::<f64>()
