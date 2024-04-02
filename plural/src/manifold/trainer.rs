@@ -4,14 +4,30 @@ use rand::{prelude::*, thread_rng};
 
 use super::fc::Manifold;
 
-pub struct Trainer<'a> {
-    manifold: &'a mut Manifold,
-    learning_rate: f64,
-    decay: f64,
-    early_terminate: Box<dyn Fn(&Vec<f64>) -> bool>,
+#[derive(Clone)]
+pub struct Hyper {
     epochs: usize,
     sample_size: usize,
+    learning_rate: f64,
+    decay: f64,
+}
+
+impl Hyper {
+    pub fn new() -> Hyper {
+        Hyper {
+            learning_rate: 0.001,
+            decay: 1.,
+            epochs: 1000,
+            sample_size: 10,
+        }
+    }
+}
+
+pub struct Trainer<'a> {
+    manifold: &'a mut Manifold,
+    hyper: Hyper,
     losses: Vec<f64>,
+    early_terminate: Box<dyn Fn(&Vec<f64>) -> bool>,
     verbose: bool,
 }
 
@@ -19,14 +35,16 @@ impl Trainer<'_> {
     pub fn new(manifold: &mut Manifold) -> Trainer {
         Trainer {
             manifold,
-            learning_rate: 0.001,
-            decay: 1.,
+            hyper: Hyper::new(),
             early_terminate: Box::new(|_| false),
-            epochs: 1000,
-            sample_size: 10,
             losses: vec![],
             verbose: false,
         }
+    }
+
+    pub fn override_hyper(&mut self, hyper: Hyper) -> &mut Self {
+        self.hyper = hyper;
+        self
     }
 
     pub fn verbose(&mut self) -> &mut Self {
@@ -35,12 +53,12 @@ impl Trainer<'_> {
     }
 
     pub fn set_learning_rate(&mut self, rate: f64) -> &mut Self {
-        self.learning_rate = rate;
+        self.hyper.learning_rate = rate;
         self
     }
 
     pub fn set_decay(&mut self, decay: f64) -> &mut Self {
-        self.decay = decay;
+        self.hyper.decay = decay;
         self
     }
 
@@ -85,12 +103,12 @@ impl Trainer<'_> {
     }
 
     pub fn set_epochs(&mut self, epochs: usize) -> &mut Self {
-        self.epochs = epochs;
+        self.hyper.epochs = epochs;
         self
     }
 
     pub fn set_sample_size(&mut self, sample_size: usize) -> &mut Self {
-        self.sample_size = sample_size;
+        self.hyper.sample_size = sample_size;
         self
     }
 
@@ -101,9 +119,9 @@ impl Trainer<'_> {
             .collect::<Vec<(Vec<f64>, Vec<f64>)>>();
         let mut rng = thread_rng();
 
-        for epoch in 0..self.epochs {
+        for epoch in 0..self.hyper.epochs {
             let sample = xy
-                .choose_multiple(&mut rng, self.sample_size)
+                .choose_multiple(&mut rng, self.hyper.sample_size)
                 .collect::<Vec<&(Vec<f64>, Vec<f64>)>>();
             let mut total_loss: Vec<f64> = vec![];
 
@@ -117,11 +135,15 @@ impl Trainer<'_> {
                         .wake()
                         .a(y_pred.clone(), Array1::from(y.clone())),
                 );
-                self.manifold
-                    .backwards(y_pred, y, self.manifold.loss.wake(), self.learning_rate);
+                self.manifold.backwards(
+                    y_pred,
+                    y,
+                    self.manifold.loss.wake(),
+                    self.hyper.learning_rate,
+                );
             }
 
-            self.learning_rate *= self.decay;
+            self.hyper.learning_rate *= self.hyper.decay;
 
             let ct = total_loss.len() as f64;
             let avg_loss = total_loss.into_iter().fold(0., |a, v| a + v) / ct;
@@ -136,7 +158,7 @@ impl Trainer<'_> {
             }
 
             if self.verbose {
-                println!("({}/{}) Loss = {}", epoch, self.epochs, avg_loss);
+                println!("({}/{}) Loss = {}", epoch, self.hyper.epochs, avg_loss);
             }
         }
 

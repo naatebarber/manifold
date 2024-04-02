@@ -14,7 +14,7 @@ use rand::prelude::*;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Default)]
 pub struct Substrate {
     weights: VecDeque<f64>,
     pub size: usize,

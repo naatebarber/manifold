@@ -110,6 +110,7 @@ pub type Web = Vec<Layer>;
 
 #[derive(Serialize, Deserialize)]
 pub struct Manifold {
+    #[serde(skip)]
     substrate: Arc<Substrate>,
     d_in: usize,
     d_out: usize,
@@ -142,7 +143,6 @@ impl Manifold {
     }
 
     pub fn dynamic(
-        substrate: Arc<Substrate>,
         d_in: usize,
         d_out: usize,
         breadth: Range<usize>,
@@ -154,7 +154,12 @@ impl Manifold {
             .map(|_| rng.gen_range(breadth.clone()))
             .collect::<Vec<usize>>();
 
-        Manifold::new(substrate, d_in, d_out, layers)
+        Manifold::new(Arc::new(Substrate::blank()), d_in, d_out, layers)
+    }
+
+    pub fn set_substrate(&mut self, substrate: Arc<Substrate>) -> &mut Self {
+        self.substrate = substrate;
+        self
     }
 
     pub fn set_hidden_activation(&mut self, activation: Activations) -> &mut Self {
@@ -279,7 +284,7 @@ impl Manifold {
         Ok(bincode::serialize(self)?)
     }
 
-    pub fn deserialize(serialized: Vec<u8>) -> Result<Manifold, Box<dyn Error>> {
-        Ok(bincode::deserialize(&serialized)?)
+    pub fn deserialize(serialized: &Vec<u8>) -> Result<Manifold, Box<dyn Error>> {
+        Ok(bincode::deserialize(serialized)?)
     }
 }
