@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use ndarray::Array1;
 use ndarray_stats::QuantileExt;
+use serde::{Deserialize, Serialize};
 
 pub trait Loss {
     fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64;
@@ -116,5 +117,20 @@ impl Loss for BinaryCrossEntropy {
                 (-t / p_clipped + (1.0 - t) / (1.0 - p_clipped)) / pred.len() as f64
             })
             .collect::<Array1<f64>>()
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum Losses {
+    MeanSquaredError,
+    SoftmaxCrossEntropy,
+}
+
+impl Losses {
+    pub fn wake(&self) -> Rc<dyn Loss> {
+        match self {
+            Losses::MeanSquaredError => MSE::new(),
+            Losses::SoftmaxCrossEntropy => SoftmaxCrossEntropy::new(),
+        }
     }
 }

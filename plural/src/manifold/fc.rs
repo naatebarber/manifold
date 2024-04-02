@@ -1,5 +1,6 @@
 use core::fmt::Debug;
 use std::collections::VecDeque;
+use std::error::Error;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -7,14 +8,17 @@ use std::sync::Arc;
 use ndarray::{Array, Array1, Array2, Axis};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
-use plotly::{Bar, Plot};
-use rand::{prelude::*, thread_rng, Rng};
+use rand::{thread_rng, Rng};
 
-use crate::activation::{Activation, Identity, Relu};
-use crate::loss::{Loss, MSE};
+use serde::{self, Deserialize, Serialize};
+
+use crate::activation::Activations;
+use crate::loss::{Loss, Losses};
 use crate::substrate::Substrate;
 
-#[derive(Debug)]
+use super::trainer::Trainer;
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Layer {
     pub x: Array2<f64>,
     pub wi: Array2<usize>,
@@ -24,7 +28,7 @@ pub struct Layer {
     pub d_z: Array2<f64>,
     pub grad_w: Array2<f64>,
     pub grad_b: Array1<f64>,
-    pub activation: Rc<dyn Activation>,
+    pub activation: Activations,
 }
 
 impl Layer {
@@ -33,7 +37,7 @@ impl Layer {
         x_shape: (usize, usize),
         w_shape: (usize, usize),
         b_shape: usize,
-        activation: Rc<dyn Activation>,
+        activation: Activations,
     ) -> Layer {
         Layer {
             x: Array2::zeros(x_shape),
@@ -76,8 +80,8 @@ impl Layer {
     pub fn forward(&mut self, x: Array2<f64>) -> Array2<f64> {
         self.x = x.clone();
         let z = x.dot(&self.w) + &self.b;
-        let a_z = self.activation.a(z.clone());
-        let d_z = self.activation.d(z.clone());
+        let a_z = self.activation.wake().a(z.clone());
+        let d_z = self.activation.wake().d(z.clone());
         self.d_z = d_z;
         a_z
     }
@@ -95,6 +99,7 @@ impl Layer {
     }
 }
 
+#[derive(Serialize, Deserialize)]
 pub enum GradientRetention {
     Roll,
     Zero,
@@ -103,23 +108,17 @@ pub enum GradientRetention {
 pub type LayerSchema = Vec<usize>;
 pub type Web = Vec<Layer>;
 
+#[derive(Serialize, Deserialize)]
 pub struct Manifold {
     substrate: Arc<Substrate>,
     d_in: usize,
     d_out: usize,
     layers: LayerSchema,
     web: Web,
-    hidden_activation: Rc<dyn Activation>,
-    output_activation: Rc<dyn Activation>,
+    hidden_activation: Activations,
     verbose: bool,
-    loss: Rc<dyn Loss>,
     gradient_retention: GradientRetention,
-    learning_rate: f64,
-    decay: f64,
-    early_terminate: Box<dyn Fn(&Vec<f64>) -> bool>,
-    epochs: usize,
-    sample_size: usize,
-    losses: Vec<f64>,
+    pub loss: Losses,
 }
 
 impl Manifold {
@@ -135,17 +134,10 @@ impl Manifold {
             d_out,
             layers,
             web: Web::new(),
-            hidden_activation: Relu::new(),
-            output_activation: Identity::new(),
+            hidden_activation: Activations::Relu,
             verbose: false,
-            loss: MSE::new(),
-            gradient_retention: GradientRetention::Roll,
-            learning_rate: 0.001,
-            decay: 1.,
-            early_terminate: Box::new(|_| false),
-            epochs: 1000,
-            sample_size: 10,
-            losses: vec![],
+            loss: Losses::MeanSquaredError,
+            gradient_retention: GradientRetention::Zero,
         }
     }
 
@@ -162,108 +154,21 @@ impl Manifold {
             .map(|_| rng.gen_range(breadth.clone()))
             .collect::<Vec<usize>>();
 
-        Manifold {
-            substrate,
-            d_in,
-            d_out,
-            web: Web::new(),
-            layers,
-            hidden_activation: Relu::new(),
-            output_activation: Identity::new(),
-            verbose: false,
-            loss: MSE::new(),
-            gradient_retention: GradientRetention::Roll,
-            learning_rate: 0.001,
-            decay: 1.,
-            early_terminate: Box::new(|_| false),
-            epochs: 1000,
-            sample_size: 1,
-            losses: vec![],
-        }
+        Manifold::new(substrate, d_in, d_out, layers)
     }
 
-    pub fn set_hidden_activation(&mut self, activation: Rc<dyn Activation>) -> &mut Self {
+    pub fn set_hidden_activation(&mut self, activation: Activations) -> &mut Self {
         self.hidden_activation = activation;
         self
     }
 
-    pub fn set_output_activation(&mut self, activation: Rc<dyn Activation>) -> &mut Self {
-        self.output_activation = activation;
-        self
-    }
-
-    pub fn verbose(&mut self) -> &mut Self {
-        self.verbose = true;
-        self
-    }
-
-    pub fn set_loss(&mut self, loss: Rc<dyn Loss>) -> &mut Self {
+    pub fn set_loss(&mut self, loss: Losses) -> &mut Self {
         self.loss = loss;
         self
     }
 
     pub fn set_gradient_retention(&mut self, method: GradientRetention) -> &mut Self {
         self.gradient_retention = method;
-        self
-    }
-
-    pub fn set_learning_rate(&mut self, rate: f64) -> &mut Self {
-        self.learning_rate = rate;
-        self
-    }
-
-    pub fn set_decay(&mut self, decay: f64) -> &mut Self {
-        self.decay = decay;
-        self
-    }
-
-    pub fn until(&mut self, patience: usize, min_delta: f64) -> &mut Self {
-        let early_terminate = move |losses: &Vec<f64>| {
-            let mut deltas: Vec<f64> = vec![];
-            let len = losses.len();
-
-            if patience + 2 > len {
-                return false;
-            }
-
-            for i in ((len - patience)..len).rev() {
-                let c = losses[i];
-                let c2 = losses[i - 1];
-
-                let delta = c2 - c;
-                deltas.push(delta);
-            }
-
-            let avg_delta = deltas.iter().fold(0., |a, v| a + *v) / deltas.len() as f64;
-
-            println!("avg delta {}", avg_delta);
-
-            if avg_delta < min_delta {
-                return true;
-            }
-
-            return false;
-        };
-
-        self.early_terminate = Box::new(early_terminate);
-        self
-    }
-
-    pub fn until_some(
-        &mut self,
-        early_terminate: impl Fn(&Vec<f64>) -> bool + 'static,
-    ) -> &mut Self {
-        self.early_terminate = Box::new(early_terminate);
-        self
-    }
-
-    pub fn set_epochs(&mut self, epochs: usize) -> &mut Self {
-        self.epochs = epochs;
-        self
-    }
-
-    pub fn set_sample_size(&mut self, sample_size: usize) -> &mut Self {
-        self.sample_size = sample_size;
         self
     }
 
@@ -282,7 +187,7 @@ impl Manifold {
                 x_shape,
                 w_shape,
                 b_shape,
-                Rc::clone(&self.hidden_activation),
+                self.hidden_activation,
             ));
             p_dim = *layer_size;
             x_shape = (1, w_shape.1);
@@ -296,7 +201,7 @@ impl Manifold {
             x_shape,
             w_shape,
             b_shape,
-            Rc::clone(&self.output_activation),
+            Activations::Identity,
         ));
         self
     }
@@ -323,7 +228,13 @@ impl Manifold {
         x.into_shape(shape).unwrap()
     }
 
-    pub fn backwards(&mut self, y_pred: Array1<f64>, y: Vec<f64>, loss: Rc<dyn Loss>) {
+    pub fn backwards(
+        &mut self,
+        y_pred: Array1<f64>,
+        y: Vec<f64>,
+        loss: Rc<dyn Loss>,
+        learning_rate: f64,
+    ) {
         let y_target = Array1::from(y);
         let grad_output_i = loss.d(y_pred, y_target);
 
@@ -340,12 +251,9 @@ impl Manifold {
             let mut b_link_reshaped = layer.bi.to_owned().insert_axis(Axis(1));
 
             self.substrate
-                .highspeed(&mut layer.grad_w, &mut layer.wi, self.learning_rate);
-            self.substrate.highspeed(
-                &mut b_grad_reshaped,
-                &mut b_link_reshaped,
-                self.learning_rate,
-            );
+                .highspeed(&mut layer.grad_w, &mut layer.wi, learning_rate);
+            self.substrate
+                .highspeed(&mut b_grad_reshaped, &mut b_link_reshaped, learning_rate);
 
             layer
                 .shift_bias(&b_link_reshaped.remove_axis(Axis(1)))
@@ -363,59 +271,15 @@ impl Manifold {
         }
     }
 
-    pub fn train(&mut self, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> &mut Self {
-        let xy = x
-            .into_iter()
-            .zip(y.into_iter())
-            .collect::<Vec<(Vec<f64>, Vec<f64>)>>();
-        let mut rng = thread_rng();
-
-        for epoch in 0..self.epochs {
-            let sample = xy
-                .choose_multiple(&mut rng, self.sample_size)
-                .collect::<Vec<&(Vec<f64>, Vec<f64>)>>();
-            let mut total_loss: Vec<f64> = vec![];
-
-            for &xy in sample.iter() {
-                let (x, y) = xy.clone();
-
-                let y_pred = self.forward(x);
-                total_loss.push(self.loss.a(y_pred.clone(), Array1::from(y.clone())));
-                self.backwards(y_pred, y, Rc::clone(&self.loss));
-            }
-
-            self.learning_rate *= self.decay;
-
-            let ct = total_loss.len() as f64;
-            let avg_loss = total_loss.into_iter().fold(0., |a, v| a + v) / ct;
-            self.losses.push(avg_loss);
-
-            if (self.early_terminate)(&self.losses) {
-                if self.verbose {
-                    println!("Early termination condition met.");
-                }
-
-                break;
-            }
-
-            if self.verbose {
-                println!("({}/{}) Loss = {}", epoch, self.epochs, avg_loss);
-            }
-        }
-
-        self
+    pub fn get_trainer(&mut self) -> Trainer {
+        Trainer::new(self)
     }
 
-    pub fn loss_graph(&mut self) -> &mut Self {
-        let mut plot = Plot::new();
+    pub fn serialize(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
+        Ok(bincode::serialize(self)?)
+    }
 
-        let x = (0..self.losses.len()).collect();
-
-        let trace = Bar::new(x, self.losses.clone());
-        plot.add_trace(trace);
-        plot.write_html("loss.html");
-        plot.show();
-
-        self
+    pub fn deserialize(serialized: Vec<u8>) -> Result<Manifold, Box<dyn Error>> {
+        Ok(bincode::deserialize(&serialized)?)
     }
 }

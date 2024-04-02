@@ -1,4 +1,4 @@
-use plural::manifolds::fc::Manifold;
+use plural::manifold::fc::Manifold;
 use plural::Substrate;
 use rand::{prelude::*, thread_rng};
 
@@ -27,10 +27,10 @@ fn main() {
 
     let mut nn = Manifold::new(substrate, 1, 1, vec![4, 4]);
     nn.weave()
-        .verbose()
         .gather()
-        .set_learning_rate(0.0001)
         .set_gradient_retention(plural::GradientRetention::Zero)
+        .get_trainer()
+        .set_learning_rate(0.0001)
         .set_decay(0.999)
         .set_epochs(500)
         .set_sample_size(100)

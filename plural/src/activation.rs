@@ -3,6 +3,7 @@ use std::rc::Rc;
 
 use ndarray::{Array2, Axis};
 use ndarray_stats::QuantileExt;
+use serde::{Deserialize, Serialize};
 
 pub trait Activation {
     fn a(&self, x: Array2<f64>) -> Array2<f64>;
@@ -89,5 +90,20 @@ impl Activation for Identity {
 
     fn d(&self, x: Array2<f64>) -> Array2<f64> {
         x
+    }
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, Copy)]
+pub enum Activations {
+    Relu,
+    Identity,
+}
+
+impl Activations {
+    pub fn wake(&self) -> Rc<dyn Activation> {
+        match self {
+            Activations::Identity => Identity::new(),
+            Activations::Relu => Relu::new(),
+        }
     }
 }

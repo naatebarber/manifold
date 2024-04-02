@@ -1,4 +1,4 @@
-use plural::manifolds::fc::Manifold;
+use plural::manifold::fc::Manifold;
 use plural::Substrate;
 
 fn main() {

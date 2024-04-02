@@ -1,10 +1,12 @@
 pub mod activation;
 pub mod f;
 pub mod loss;
-pub mod manifolds;
+pub mod manifold;
+pub mod neat;
 pub mod substrate;
 
-pub use manifolds::fc::GradientRetention;
+pub use manifold::fc::GradientRetention;
+pub use neat::Neat;
 pub use substrate::Substrate;
 
 // pub type Population = VecDeque<Arc<Mutex<Manifold>>>;

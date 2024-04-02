@@ -1,8 +1,9 @@
-use plural::activation::Relu;
+use plural::activation::Activations;
 use plural::f;
 use plural::loss::SoftmaxCrossEntropy;
-use plural::manifolds::fc::Manifold;
+use plural::manifold::fc::Manifold;
 use plural::Substrate;
+use plural::{activation::Relu, loss::Losses};
 use rand::{prelude::*, thread_rng};
 
 fn gen_training_data(size: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
@@ -33,14 +34,15 @@ fn main() {
     let substrate = Substrate::new(10000, 0.0..1.0).share();
 
     let mut nn = Manifold::new(substrate, 2, 2, vec![16]);
-    nn.set_hidden_activation(Relu::new())
+    nn.set_hidden_activation(Activations::Relu)
+        .set_loss(Losses::SoftmaxCrossEntropy)
         .weave()
         .gather()
+        .set_gradient_retention(plural::GradientRetention::Roll)
+        .get_trainer()
         .set_learning_rate(0.000)
         .set_decay(0.995)
         .set_epochs(1000)
-        .set_loss(SoftmaxCrossEntropy::new())
-        .set_gradient_retention(plural::GradientRetention::Roll)
         .set_sample_size(10)
         .train(train_x, train_y);
 

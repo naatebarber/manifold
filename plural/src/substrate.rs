@@ -44,6 +44,13 @@ impl Substrate {
         }
     }
 
+    pub fn blank() -> Substrate {
+        Substrate {
+            weights: VecDeque::new(),
+            size: 0,
+        }
+    }
+
     pub fn get(&self, i: usize) -> f64 {
         let w = self.weights.get(i).expect(
             format!(
@@ -111,11 +118,11 @@ impl Substrate {
     }
 
     pub fn dump(&self, tag: &str) -> Result<(), Box<dyn Error>> {
-        let substrate_str = serde_json::to_string(&self)?;
+        let substrate_str = bincode::serialize(&self)?;
         let cwd = env::current_dir()?;
         fs::write(
             cwd.join(PathBuf::from_str(
-                format!(".models/{}.substrate.json", tag).as_str(),
+                format!(".models/{}.substrate.bin", tag).as_str(),
             )?),
             substrate_str,
         )?;
@@ -126,11 +133,11 @@ impl Substrate {
     pub fn load(tag: &str) -> Result<Substrate, Box<dyn Error>> {
         let cwd = env::current_dir()?;
 
-        let serial = fs::read_to_string(cwd.join(PathBuf::from_str(
-            format!(".models/{}.substrate.json", tag).as_str(),
+        let serial = fs::read(cwd.join(PathBuf::from_str(
+            format!(".models/{}.substrate.bin", tag).as_str(),
         )?))?;
 
-        let substrate: Substrate = serde_json::from_str(&serial)?;
+        let substrate: Substrate = bincode::deserialize(&serial)?;
 
         Ok(substrate)
     }
