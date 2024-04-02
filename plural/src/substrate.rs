@@ -7,51 +7,111 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
 
+use ndarray::Array2;
+
 use rand::distributions::Uniform;
 use rand::prelude::*;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 
-pub type Substrate = Arc<VecDeque<Mote>>;
-
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Mote {
-    v: f64,
+pub struct Substrate {
+    weights: VecDeque<f64>,
+    pub size: usize,
 }
 
-impl Mote {
-    pub fn random_normal(distribution: Uniform<f64>, rng: &mut ThreadRng) -> Mote {
-        Mote {
-            v: distribution.sample(rng),
-        }
-    }
-
-    pub fn get(&self) -> f64 {
-        self.v.clone()
-    }
-
-    pub fn substrate(size: usize, range: Range<f64>) -> (Substrate, usize) {
-        let mut motes: VecDeque<Mote> = VecDeque::new();
+impl Substrate {
+    pub fn new(size: usize, range: Range<f64>) -> Substrate {
+        let mut weights: VecDeque<f64> = VecDeque::new();
 
         let distribution = Uniform::new(range.start, range.end);
         let mut rng = thread_rng();
 
         for _ in 0..=size {
-            motes.push_back(Mote::random_normal(distribution, &mut rng))
+            weights.push_back(distribution.sample(&mut rng))
         }
 
-        motes
+        weights
             .make_contiguous()
-            .sort_unstable_by(|a, b| match a.v > b.v {
+            .sort_unstable_by(|a, b| match a > b {
                 true => std::cmp::Ordering::Greater,
                 false => std::cmp::Ordering::Less,
             });
 
-        (Arc::new(motes), size - 1)
+        Substrate {
+            weights,
+            size: size - 1,
+        }
     }
 
-    pub fn dump_substrate(substrate: Substrate, tag: &str) -> Result<(), Box<dyn Error>> {
-        let substrate_str = serde_json::to_string(&substrate)?;
+    pub fn get(&self, i: usize) -> f64 {
+        let w = self.weights.get(i).expect(
+            format!(
+                "Tried to access Substrate[{}] from Substrate[{}..{}]",
+                i, 0, self.size
+            )
+            .as_str(),
+        );
+        *w
+    }
+
+    pub fn share(self) -> Arc<Self> {
+        Arc::new(self)
+    }
+
+    pub fn highspeed<'a>(
+        &'a self,
+        gradient: &'a mut Array2<f64>,
+        link: &'a mut Array2<usize>,
+        learning_rate: f64,
+    ) {
+        assert_eq!(gradient.raw_dim(), link.raw_dim());
+
+        // Keep these things in mind.
+        // Relation between gradient values and integer updates
+        // Size of the substrate, and how much impact each integer update has.
+        // Maybe make it more difficult to approach the edge of the substrate than navigate the middle.
+
+        // Assume a step is 1/1000 of the substrate
+        // Define everything else in terms of step
+        let step = self.size as f64 / 1000.;
+
+        // Combine highspeed rate with step for gradient element-wise influence on link.
+        let mut gradient_steps = gradient.map(|x| step * learning_rate * x);
+        let actionable_steps = gradient_steps.map(|x| x.floor());
+
+        // Use actionable steps as a mask on gradient_steps
+        gradient_steps -= &actionable_steps;
+
+        // Reverse the scaled gradient steps
+        *gradient = gradient_steps.mapv_into(|x| x / (step * learning_rate));
+
+        // Extract values with amplitude > 1 out of gradient and leave the
+        // 0<abs(x)<1 float values to be fed back into layer
+        let delta_signed = link.map(|x| *x as i64) + actionable_steps.map(|x| *x as i64);
+
+        let mut leftedge = 0;
+        let mut rightedge = 0;
+
+        let delta = delta_signed.map(|x| {
+            if *x < 0 {
+                leftedge += 1;
+                return 0 as usize;
+            }
+
+            if *x > self.size as i64 {
+                rightedge += 1;
+                return self.size as usize;
+            }
+
+            return *x as usize;
+        });
+
+        *link = delta;
+    }
+
+    pub fn dump(&self, tag: &str) -> Result<(), Box<dyn Error>> {
+        let substrate_str = serde_json::to_string(&self)?;
         let cwd = env::current_dir()?;
         fs::write(
             cwd.join(PathBuf::from_str(
@@ -63,34 +123,29 @@ impl Mote {
         Ok(())
     }
 
-    pub fn load_substrate(tag: &str) -> Result<(Substrate, usize), Box<dyn Error>> {
+    pub fn load(tag: &str) -> Result<Substrate, Box<dyn Error>> {
         let cwd = env::current_dir()?;
 
         let serial = fs::read_to_string(cwd.join(PathBuf::from_str(
             format!(".models/{}.substrate.json", tag).as_str(),
         )?))?;
 
-        let substrate: Substrate = Arc::new(serde_json::from_str(&serial)?);
-        let substrate_len = substrate.len() - 1;
+        let substrate: Substrate = serde_json::from_str(&serial)?;
 
-        Ok((substrate, substrate_len))
+        Ok(substrate)
     }
 
-    pub fn load_substrate_or_create(
-        tag: &str,
-        size: usize,
-        range: Range<f64>,
-    ) -> (Substrate, usize) {
-        let (substrate, len) = match Mote::load_substrate(tag) {
+    pub fn load_substrate_or_create(tag: &str, size: usize, range: Range<f64>) -> Substrate {
+        let s = match Substrate::load(tag) {
             Ok(s) => s,
             _ => {
-                let (neuros, mesh_len) = Mote::substrate(size, range);
-                Mote::dump_substrate(neuros.clone(), tag)
+                let s = Substrate::new(size, range);
+                s.dump(tag)
                     .unwrap_or_else(|_| println!("Failed to save substrate."));
-                (neuros, mesh_len)
+                s
             }
         };
 
-        (substrate, len)
+        s
     }
 }

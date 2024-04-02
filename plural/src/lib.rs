@@ -4,7 +4,8 @@ pub mod loss;
 pub mod manifolds;
 pub mod substrate;
 
-pub use substrate::Mote;
+pub use manifolds::fc::GradientRetention;
+pub use substrate::Substrate;
 
 // pub type Population = VecDeque<Arc<Mutex<Manifold>>>;
 pub type Dataset = (Vec<Vec<f64>>, Vec<Vec<f64>>);

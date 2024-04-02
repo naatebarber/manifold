@@ -1,7 +1,5 @@
-use plural::f;
-use plural::loss::MSE;
 use plural::manifolds::fc::Manifold;
-use plural::Mote;
+use plural::Substrate;
 use rand::{prelude::*, thread_rng};
 
 type Dataset = (Vec<Vec<f64>>, Vec<Vec<f64>>);
@@ -25,17 +23,22 @@ fn gen_xy(size: usize) -> Dataset {
 fn main() {
     let (x, y) = gen_xy(10000);
 
-    let (substrate, pool_size) = Mote::substrate(10000, -0.0..1.0);
-    let mut nn = Manifold::new(pool_size, 1, 1, vec![4, 4]);
+    let substrate = Substrate::new(100000, -0.0..1.0).share();
+
+    let mut nn = Manifold::new(substrate, 1, 1, vec![4, 4]);
     nn.weave()
-        .gather(&substrate)
-        .set_learning_rate(0.00001)
-        .set_epochs(10000)
-        .set_sample_size(10)
+        .verbose()
+        .gather()
+        .set_learning_rate(0.0001)
+        .set_gradient_retention(plural::GradientRetention::Zero)
+        .set_decay(0.999)
+        .set_epochs(500)
+        .set_sample_size(100)
+        .until(100, 0.02)
         .train(x, y)
         .loss_graph();
 
-    let (x, y) = gen_xy(1000);
+    let (x, y) = gen_xy(10);
     let testxy = x.into_iter().zip(y.into_iter());
 
     for (x, y) in testxy.into_iter() {
