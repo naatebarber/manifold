@@ -1,10 +1,12 @@
-pub mod activation;
+mod activation;
 pub mod f;
-pub mod loss;
+mod loss;
 pub mod manifold;
 pub mod neat;
 pub mod substrate;
 
+pub use activation::Activations;
+pub use loss::Losses;
 pub use manifold::fc::GradientRetention;
 pub use neat::Neat;
 pub use substrate::Substrate;

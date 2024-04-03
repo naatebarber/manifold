@@ -6,10 +6,10 @@ use super::fc::Manifold;
 
 #[derive(Clone)]
 pub struct Hyper {
-    epochs: usize,
-    sample_size: usize,
-    learning_rate: f64,
-    decay: f64,
+    pub epochs: usize,
+    pub sample_size: usize,
+    pub learning_rate: f64,
+    pub decay: f64,
 }
 
 impl Hyper {
@@ -172,7 +172,6 @@ impl Trainer<'_> {
 
         let trace = Bar::new(x, self.losses.clone());
         plot.add_trace(trace);
-        plot.write_html("loss.html");
         plot.show();
 
         self

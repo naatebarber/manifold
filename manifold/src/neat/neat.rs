@@ -1,10 +1,10 @@
-use serde::Serialize;
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     error::Error,
     ops::Range,
     sync::Arc,
     thread::{self, available_parallelism, JoinHandle},
+    time::Duration,
 };
 use zmq::{
     poll, Context, Socket,
@@ -12,7 +12,7 @@ use zmq::{
 };
 
 use crate::{
-    manifold::{self, fc::Manifold, trainer::Hyper},
+    manifold::{fc::Manifold, trainer::Hyper},
     Substrate,
 };
 
@@ -36,12 +36,7 @@ pub struct Neat {
 }
 
 impl Neat {
-    pub fn new(
-        d_in: usize,
-        d_out: usize,
-        breadth: Range<usize>,
-        depth: Range<usize>,
-    ) -> Result<Neat, Box<dyn Error>> {
+    pub fn new(d_in: usize, d_out: usize) -> Result<Neat, Box<dyn Error>> {
         let context = Context::new();
         let producer_sock = context.socket(PUSH)?;
         let collector_sock = context.socket(PULL)?;
@@ -59,8 +54,8 @@ impl Neat {
             hyper: Arc::new(Hyper::new()),
             d_in,
             d_out,
-            breadth,
-            depth,
+            breadth: 4..12,
+            depth: 4..12,
             workers: VecDeque::new(),
             sample_window: 1000,
             chunk_size: 10,
@@ -69,37 +64,42 @@ impl Neat {
         })
     }
 
-    pub fn with_breadth(&mut self, breadth: Range<usize>) -> &mut Self {
+    pub fn set_breadth(&mut self, breadth: Range<usize>) -> &mut Self {
         self.breadth = breadth;
         self
     }
 
-    pub fn with_depth(&mut self, depth: Range<usize>) -> &mut Self {
+    pub fn set_depth(&mut self, depth: Range<usize>) -> &mut Self {
         self.depth = depth;
         self
     }
 
-    pub fn with_hyper(&mut self, hyper: Hyper) -> &mut Self {
+    pub fn set_hyper(&mut self, hyper: Hyper) -> &mut Self {
         self.hyper = Arc::new(hyper);
         self
     }
 
-    pub fn with_arc_substrate(&mut self, substrate: Arc<Substrate>) -> &mut Self {
+    pub fn set_arc_substrate(&mut self, substrate: Arc<Substrate>) -> &mut Self {
         self.substrate = substrate;
         self
     }
 
-    pub fn with_sample_window(&mut self, sample_window: usize) -> &mut Self {
+    pub fn set_chunk_size(&mut self, size: usize) -> &mut Self {
+        self.chunk_size = size;
+        self
+    }
+
+    pub fn set_sample_window(&mut self, sample_window: usize) -> &mut Self {
         self.sample_window = sample_window;
         self
     }
 
-    pub fn with_arch_epochs(&mut self, epochs: usize) -> &mut Self {
+    pub fn set_arch_epochs(&mut self, epochs: usize) -> &mut Self {
         self.arch_epochs = epochs;
         self
     }
 
-    pub fn with_retain(&mut self, retain: usize) -> &mut Self {
+    pub fn set_retain(&mut self, retain: usize) -> &mut Self {
         self.retain = retain;
         self
     }
@@ -219,7 +219,7 @@ impl Neat {
         let cores: usize = available_parallelism().unwrap().into();
 
         for core in 0..cores {
-            let worker_name = format!("plural-neat-worker-{}", core);
+            let worker_name = format!("manifold-neat-worker-{}", core);
             let id = worker_name.clone();
             let substrate = self.substrate.clone();
             let hyper = self.hyper.clone();
@@ -252,8 +252,44 @@ impl Neat {
         self
     }
 
-    pub fn join(workers: Vec<JoinHandle<()>>) {
-        let _ = workers.into_iter().map(|worker| worker.join());
+    pub fn graceful_shutdown(&mut self) -> usize {
+        let turns = self.workers.len();
+        let mut turn = 0;
+        let mut exited = 0;
+        while turn < turns {
+            if let Some(worker) = self.workers.pop_front() {
+                if worker.is_finished() {
+                    let _ = worker.join();
+                    exited += 1;
+                } else {
+                    self.workers.push_back(worker);
+                }
+            } else {
+                return exited;
+            }
+
+            turn += 1;
+        }
+
+        turns - exited
+    }
+
+    pub fn kill_workers(&mut self) -> Result<(), Box<dyn Error>> {
+        let parts = ["cmd".as_bytes(), "kill".as_bytes()];
+        self.pub_sock.send_multipart(parts, 0)?;
+        let num_workers = self.workers.len();
+
+        println!("[Done. Killing {} workers]", num_workers);
+
+        let mut remaining_workers = self.graceful_shutdown();
+
+        while remaining_workers > 0 {
+            println!("[Waiting on {} workers...]", remaining_workers);
+            thread::sleep(Duration::from_millis(500));
+            remaining_workers = self.graceful_shutdown();
+        }
+
+        Ok(())
     }
 
     pub fn create_topologies(&mut self, exclude_retain: usize) -> Vec<Manifold> {
@@ -285,8 +321,8 @@ impl Neat {
 
     pub fn stream_data(
         &mut self,
-        mut x: Vec<Vec<f64>>,
-        mut y: Vec<Vec<f64>>,
+        x: Vec<Vec<f64>>,
+        y: Vec<Vec<f64>>,
     ) -> Result<(), Box<dyn Error>> {
         let mut tc = TrainChunk::new();
         tc.bulk(x, y);
@@ -298,11 +334,11 @@ impl Neat {
         Ok(())
     }
 
-    pub fn wake(
+    pub fn sift(
         &mut self,
         mut x_pool: VecDeque<Vec<f64>>,
         mut y_pool: VecDeque<Vec<f64>>,
-    ) -> Result<(), Box<dyn Error>> {
+    ) -> Result<Vec<Manifold>, Box<dyn Error>> {
         self.spawn_workers();
         let num_workers = self.workers.len();
 
@@ -332,8 +368,8 @@ impl Neat {
             }
 
             match self.stream_data(
-                x_pool.drain(0..self.sample_window).collect(),
-                y_pool.drain(0..self.sample_window).collect(),
+                x_pool.drain(0..self.chunk_size).collect(),
+                y_pool.drain(0..self.chunk_size).collect(),
             ) {
                 Ok(()) => (),
                 Err(_) => {
@@ -390,6 +426,10 @@ impl Neat {
             }
         }
 
-        Ok(())
+        let best = splat.into_iter().map(|x| x.2).collect::<Vec<Manifold>>();
+
+        self.kill_workers()?;
+
+        Ok(best)
     }
 }

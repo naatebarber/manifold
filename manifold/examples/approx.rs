@@ -1,5 +1,5 @@
-use plural::manifold::fc::Manifold;
-use plural::Substrate;
+use manifold::manifold::fc::Manifold;
+use manifold::Substrate;
 use rand::{prelude::*, thread_rng};
 
 type Dataset = (Vec<Vec<f64>>, Vec<Vec<f64>>);
@@ -28,7 +28,7 @@ fn main() {
     let mut nn = Manifold::new(substrate, 1, 1, vec![4, 4]);
     nn.weave()
         .gather()
-        .set_gradient_retention(plural::GradientRetention::Zero)
+        .set_gradient_retention(manifold::GradientRetention::Zero)
         .get_trainer()
         .set_learning_rate(0.0001)
         .set_decay(0.999)

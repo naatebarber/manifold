@@ -1,5 +1,5 @@
-use plural::manifold::fc::Manifold;
-use plural::Substrate;
+use manifold::manifold::fc::Manifold;
+use manifold::Substrate;
 
 fn main() {
     let substrate = Substrate::new(10000, -1.0..1.0).share();
