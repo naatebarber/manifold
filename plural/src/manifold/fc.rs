@@ -18,7 +18,7 @@ use crate::substrate::Substrate;
 
 use super::trainer::Trainer;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Layer {
     pub x: Array2<f64>,
     pub wi: Array2<usize>,
@@ -99,7 +99,7 @@ impl Layer {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub enum GradientRetention {
     Roll,
     Zero,
@@ -108,7 +108,7 @@ pub enum GradientRetention {
 pub type LayerSchema = Vec<usize>;
 pub type Web = Vec<Layer>;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Manifold {
     #[serde(skip)]
     substrate: Arc<Substrate>,
@@ -280,11 +280,11 @@ impl Manifold {
         Trainer::new(self)
     }
 
-    pub fn serialize(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn dump(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
         Ok(bincode::serialize(self)?)
     }
 
-    pub fn deserialize(serialized: &Vec<u8>) -> Result<Manifold, Box<dyn Error>> {
+    pub fn load(serialized: &Vec<u8>) -> Result<Manifold, Box<dyn Error>> {
         Ok(bincode::deserialize(serialized)?)
     }
 }

@@ -29,11 +29,11 @@ impl TrainChunk {
         self
     }
 
-    pub fn serialize(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
+    pub fn dump(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
         Ok(bincode::serialize(self)?)
     }
 
-    pub fn deserialize(serialized: &Vec<u8>) -> Result<TrainChunk, Box<dyn Error>> {
+    pub fn load(serialized: &Vec<u8>) -> Result<TrainChunk, Box<dyn Error>> {
         Ok(bincode::deserialize(&serialized)?)
     }
 }

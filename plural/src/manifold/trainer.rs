@@ -26,9 +26,9 @@ impl Hyper {
 pub struct Trainer<'a> {
     manifold: &'a mut Manifold,
     hyper: Hyper,
-    losses: Vec<f64>,
     early_terminate: Box<dyn Fn(&Vec<f64>) -> bool>,
     verbose: bool,
+    pub losses: Vec<f64>,
 }
 
 impl Trainer<'_> {
