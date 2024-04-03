@@ -47,7 +47,7 @@ impl Activation for Relu {
 pub struct Softmax;
 
 impl Softmax {
-    pub fn new() -> Rc<Softmax> {
+    pub fn _new() -> Rc<Softmax> {
         Rc::new(Softmax)
     }
 }

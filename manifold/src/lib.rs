@@ -8,6 +8,7 @@ mod util;
 
 pub use activation::Activations;
 pub use loss::Losses;
+pub use manifold as nn;
 pub use manifold::fc::GradientRetention;
 pub use neat::Neat;
 pub use substrate::Substrate;

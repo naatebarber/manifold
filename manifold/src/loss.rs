@@ -41,26 +41,6 @@ impl Loss for MSE {
     }
 }
 
-pub struct CategoricalCrossEntropy;
-
-impl CategoricalCrossEntropy {
-    pub fn new() -> Rc<CategoricalCrossEntropy> {
-        Rc::new(CategoricalCrossEntropy)
-    }
-}
-
-impl Loss for CategoricalCrossEntropy {
-    fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
-        let log_pred = pred.map(|x| x.ln());
-        let prod = log_pred * target;
-        -prod.sum()
-    }
-
-    fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {
-        pred - target
-    }
-}
-
 pub struct SoftmaxCrossEntropy;
 
 impl SoftmaxCrossEntropy {
@@ -86,10 +66,30 @@ impl Loss for SoftmaxCrossEntropy {
     }
 }
 
+pub struct CategoricalCrossEntropy;
+
+impl CategoricalCrossEntropy {
+    pub fn _new() -> Rc<CategoricalCrossEntropy> {
+        Rc::new(CategoricalCrossEntropy)
+    }
+}
+
+impl Loss for CategoricalCrossEntropy {
+    fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
+        let log_pred = pred.map(|x| x.ln());
+        let prod = log_pred * target;
+        -prod.sum()
+    }
+
+    fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {
+        pred - target
+    }
+}
+
 pub struct BinaryCrossEntropy;
 
 impl BinaryCrossEntropy {
-    pub fn new() -> Rc<BinaryCrossEntropy> {
+    pub fn _new() -> Rc<BinaryCrossEntropy> {
         Rc::new(BinaryCrossEntropy)
     }
 }

@@ -1,7 +1,7 @@
 use std::collections::VecDeque;
 use std::error::Error;
 
-use manifold::manifold::trainer::Hyper;
+use manifold::nn::trainer::Hyper;
 use manifold::Neat;
 use manifold::Substrate;
 use rand::{prelude::*, thread_rng};
