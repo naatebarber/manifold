@@ -25,7 +25,7 @@ fn gen_xy(size: usize) -> Dataset {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
-    let (_x, _y) = gen_xy(100000);
+    let (_x, _y) = gen_xy(1000000);
     let x = VecDeque::from(_x);
     let y = VecDeque::from(_y);
 
@@ -36,9 +36,11 @@ fn main() -> Result<(), Box<dyn Error>> {
     neat.set_breadth(5..30)
         .set_depth(2..20)
         .set_arc_substrate(substrate)
-        .set_retain(2)
-        .set_sample_window(1000)
-        .set_chunk_size(10)
+        .set_arch_epochs(1000)
+        .set_retain(1)
+        .set_sample_window(10000)
+        .set_chunk_size(1000)
+        .set_chunks_per_generation(5)
         .set_hyper(Hyper {
             epochs: 1000,
             sample_size: 10,
@@ -46,18 +48,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             decay: 0.999,
         });
 
-    let evolved_manifolds = neat.sift(x, y)?;
+    let mut nn = neat.sift(x, y)?.pop().unwrap();
 
-    for mut nn in evolved_manifolds.into_iter() {
-        let (x, y) = gen_xy(10);
-        let testxy = x.into_iter().zip(y.into_iter());
+    let (x, y) = gen_xy(10);
+    let testxy = x.into_iter().zip(y.into_iter());
 
-        for (x, y) in testxy.into_iter() {
-            let y_pred = nn.forward(x.clone());
-            let v = y_pred.to_vec();
+    for (x, y) in testxy.into_iter() {
+        let y_pred = nn.forward(x.clone());
+        let v = y_pred.to_vec();
 
-            println!("{:?} =?= {:?}", v, y);
-        }
+        println!("{:?} =?= {:?}", v, y);
     }
 
     Ok(())

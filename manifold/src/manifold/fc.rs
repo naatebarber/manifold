@@ -114,11 +114,11 @@ pub struct Manifold {
     substrate: Arc<Substrate>,
     d_in: usize,
     d_out: usize,
-    layers: LayerSchema,
     web: Web,
     hidden_activation: Activations,
     verbose: bool,
     gradient_retention: GradientRetention,
+    pub layers: LayerSchema,
     pub loss: Losses,
 }
 

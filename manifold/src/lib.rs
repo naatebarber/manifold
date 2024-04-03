@@ -4,6 +4,7 @@ mod loss;
 pub mod manifold;
 pub mod neat;
 pub mod substrate;
+mod util;
 
 pub use activation::Activations;
 pub use loss::Losses;

@@ -9,14 +9,18 @@ use std::{
 use zmq::{
     poll, Context, Socket,
     SocketType::{PUB, PULL, PUSH, SUB},
+    DONTWAIT,
 };
 
 use crate::{
     manifold::{fc::Manifold, trainer::Hyper},
+    util::timestamp,
     Substrate,
 };
 
 use super::TrainChunk;
+
+pub type MultipartMessage = Vec<Vec<u8>>;
 
 pub struct Neat {
     producer_sock: Socket,
@@ -32,6 +36,7 @@ pub struct Neat {
     arch_epochs: usize,
     sample_window: usize,
     chunk_size: usize,
+    chunks_per_generation: usize,
     retain: usize,
 }
 
@@ -59,6 +64,7 @@ impl Neat {
             workers: VecDeque::new(),
             sample_window: 1000,
             chunk_size: 10,
+            chunks_per_generation: 100,
             arch_epochs: 100,
             retain: 1,
         })
@@ -94,6 +100,11 @@ impl Neat {
         self
     }
 
+    pub fn set_chunks_per_generation(&mut self, cpg: usize) -> &mut Self {
+        self.chunks_per_generation = cpg;
+        self
+    }
+
     pub fn set_arch_epochs(&mut self, epochs: usize) -> &mut Self {
         self.arch_epochs = epochs;
         self
@@ -109,6 +120,7 @@ impl Neat {
         substrate: Arc<Substrate>,
         hyper: Arc<Hyper>,
         sample_window: usize,
+        chunk_size: usize,
     ) -> Result<(), Box<dyn Error>> {
         let context = Context::new();
 
@@ -119,20 +131,31 @@ impl Neat {
         result_sock.connect("tcp://127.0.0.1:12023")?;
 
         let data_sock = context.socket(SUB)?;
-        data_sock.connect("tcp://127.0.0.1:12021")?;
         data_sock.set_subscribe("xy".as_bytes())?;
-        data_sock.set_subscribe("kill".as_bytes())?;
+        data_sock.connect("tcp://127.0.0.1:12024")?;
+
+        let cmd_sock = context.socket(SUB)?;
+        cmd_sock.set_subscribe("cmd".as_bytes())?;
+        cmd_sock.connect("tcp://127.0.0.1:12024")?;
 
         let mut sockets = [
             worker_sock.as_poll_item(zmq::POLLIN),
             data_sock.as_poll_item(zmq::POLLIN),
+            cmd_sock.as_poll_item(zmq::POLLIN),
         ];
 
+        let mut state = "idle";
         let mut manifold: Option<Manifold> = None;
         let mut x_q: VecDeque<Vec<f64>> = VecDeque::new();
         let mut y_q: VecDeque<Vec<f64>> = VecDeque::new();
 
         let mut worker_losses: Vec<f64> = vec![];
+
+        let send_state = |state: &str| {
+            let _ = result_sock.send_multipart(["state".as_bytes(), state.as_bytes()], 0);
+        };
+
+        send_state(state);
 
         loop {
             poll(&mut sockets, 10)?;
@@ -142,12 +165,17 @@ impl Neat {
                 if msgb.len() < 1 {
                     println!("[{}] received bad architecture message.", name);
                 }
+
                 match Manifold::load(&msgb[0]) {
                     Ok(m) => {
                         manifold = Some(m);
+                        state = "awaiting_data";
+                        worker_losses = vec![];
+                        send_state(state);
                     }
                     Err(_) => {
                         eprintln!("[{}] Received malformed binary architecture.", name);
+                        state = "idle";
                         manifold = None
                     }
                 }
@@ -155,7 +183,6 @@ impl Neat {
 
             if sockets[1].is_readable() {
                 let msgb = data_sock.recv_multipart(0)?;
-                let msg_type = String::from_utf8_lossy(&msgb[0]);
 
                 let bad_msg = || println!("[{}] received bad training data message.", name);
 
@@ -164,53 +191,65 @@ impl Neat {
                     continue;
                 }
 
-                if msg_type == "xy" {
-                    match TrainChunk::load(&msgb[1]) {
-                        Ok(tc) => {
-                            x_q.append(&mut VecDeque::from(tc.0));
-                            y_q.append(&mut VecDeque::from(tc.1));
+                match TrainChunk::load(&msgb[1]) {
+                    Ok(tc) => {
+                        x_q.append(&mut VecDeque::from(tc.0));
+                        y_q.append(&mut VecDeque::from(tc.1));
 
-                            while x_q.len() > sample_window && y_q.len() > sample_window {
-                                x_q.pop_front();
-                                y_q.pop_front();
-                            }
+                        while x_q.len() > sample_window && y_q.len() > sample_window {
+                            x_q.pop_front();
+                            y_q.pop_front();
                         }
-                        Err(_) => {
-                            eprintln!("[{}] Received malformed train chunk.", name);
-                        }
-                    }
-                } else if msg_type == "cmd" {
-                    let cmd = String::from_utf8(msgb[1].clone())?;
 
-                    match cmd.as_str() {
-                        "dump" => {
-                            if let Some(nn) = &mut manifold {
-                                let bin_nn = nn.dump()?;
-                                let result = [
-                                    bin_nn,
-                                    bincode::serialize(&worker_losses)?,
-                                    name.as_bytes().to_vec(),
-                                ];
-                                result_sock.send_multipart(result, 0)?;
-                            }
-                        }
-                        "kill" => return Ok(()),
-                        _ => println!("[{}] Unknown command {}", name, cmd),
+                        state = "trainable";
+                        send_state(state);
                     }
-                } else {
-                    bad_msg()
+                    Err(_) => {
+                        eprintln!("[{}] Received malformed train chunk.", name);
+                    }
                 }
             }
 
+            if sockets[2].is_readable() {
+                let msgb = cmd_sock.recv_multipart(0)?;
+                let cmd = String::from_utf8(msgb[1].clone())?;
+                match cmd.as_str() {
+                    "dump" => {
+                        if let Some(nn) = &mut manifold {
+                            let bin_nn = nn.dump()?;
+                            let result = [
+                                "arch".as_bytes().to_vec(),
+                                bin_nn,
+                                bincode::serialize(&worker_losses)?,
+                                name.as_bytes().to_vec(),
+                            ];
+                            result_sock.send_multipart(result, 0)?;
+                        }
+                    }
+                    "state" => send_state(state),
+                    "kill" => {
+                        state = "terminating";
+                        send_state(state);
+                        return Ok(());
+                    }
+                    _ => println!("[{}] Unknown command {}", name, cmd),
+                }
+            }
+
+            if x_q.len() < chunk_size || y_q.len() < chunk_size {
+                state = "awaiting_data";
+                continue;
+            }
+
             if let Some(nn) = &mut manifold {
-                // Train the model and evaluate performance.
                 let mut trainer = nn.set_substrate(substrate.clone()).get_trainer();
 
-                trainer
-                    .override_hyper((*hyper).clone())
-                    .train(x_q.clone().into(), y_q.clone().into());
+                trainer.override_hyper((*hyper).clone()).train(
+                    x_q.drain(0..chunk_size).collect(),
+                    y_q.drain(0..chunk_size).collect(),
+                );
 
-                worker_losses.extend(trainer.losses.drain(..))
+                worker_losses.extend(trainer.losses.drain(..));
             }
         }
     }
@@ -224,24 +263,29 @@ impl Neat {
             let substrate = self.substrate.clone();
             let hyper = self.hyper.clone();
             let sample_window = self.sample_window.clone();
+            let chunk_size = self.chunk_size.clone();
 
             let worker_handle =
                 match thread::Builder::new()
                     .name(worker_name.clone())
                     .spawn(move || {
-                        match Neat::worker(id.clone(), substrate, hyper, sample_window) {
+                        match Neat::worker(id.clone(), substrate, hyper, sample_window, chunk_size)
+                        {
                             Err(e) => {
-                                eprint!("{} died with error {}", &id, e)
+                                eprint!("[Worker '{}' died with error {}]", &id, e)
                             }
                             Ok(_) => (),
                         }
                     }) {
                     Ok(h) => {
-                        println!("Spawned {}", worker_name);
+                        println!("[Spawned worker '{}']", worker_name);
                         h
                     }
                     Err(e) => {
-                        eprintln!("{} failed to spawn with error {}", worker_name, e);
+                        eprintln!(
+                            "[Worker '{}' failed to spawn with error {}]",
+                            worker_name, e
+                        );
                         continue;
                     }
                 };
@@ -290,6 +334,99 @@ impl Neat {
         }
 
         Ok(())
+    }
+
+    pub fn assign_work(
+        &mut self,
+        payload: Vec<MultipartMessage>,
+        timeout: u64,
+    ) -> Result<Vec<MultipartMessage>, Box<dyn Error>> {
+        for p in payload.into_iter() {
+            self.producer_sock.send_multipart(&p, DONTWAIT)?;
+        }
+
+        let mut sockets = [self.collector_sock.as_poll_item(zmq::POLLIN)];
+
+        let t = timestamp()?;
+        let mut c = t.clone();
+
+        let mut responses: Vec<MultipartMessage> = Vec::new();
+
+        while t + timeout > c {
+            zmq::poll(&mut sockets, 10)?;
+
+            if sockets[0].is_readable() {
+                let msgb = self.collector_sock.recv_multipart(0)?;
+                responses.push(msgb);
+            }
+
+            c = timestamp()?;
+        }
+
+        Ok(responses)
+    }
+
+    pub fn notify_all(
+        &mut self,
+        payload: MultipartMessage,
+        timeout: u64,
+    ) -> Result<Vec<MultipartMessage>, Box<dyn Error>> {
+        self.pub_sock.send_multipart(payload, 0)?;
+
+        let mut sockets = [self.collector_sock.as_poll_item(zmq::POLLIN)];
+
+        let t = timestamp()?;
+        let mut c = t.clone();
+
+        let mut responses: Vec<MultipartMessage> = Vec::new();
+
+        while t + timeout > c {
+            zmq::poll(&mut sockets, 10)?;
+
+            if sockets[0].is_readable() {
+                let msgb = self.collector_sock.recv_multipart(0)?;
+                responses.push(msgb);
+            }
+
+            c = timestamp()?;
+        }
+
+        Ok(responses)
+    }
+
+    pub fn check_state(&mut self, state: &str, timeout: u64) -> Result<bool, Box<dyn Error>> {
+        let msg = vec!["state".as_bytes().to_vec()];
+        let responses = self.notify_all(msg, timeout)?;
+
+        let states = responses
+            .into_iter()
+            .filter_map(|msgb| {
+                if msgb.len() < 2 {
+                    return None;
+                }
+
+                let msg_type = String::from_utf8(msgb[0].clone()).ok();
+                let sent_state = String::from_utf8(msgb[1].clone()).ok();
+
+                match (msg_type, sent_state) {
+                    (Some(x), Some(y)) => {
+                        if x == "state" {
+                            return Some(y);
+                        }
+                        None
+                    }
+                    _ => None,
+                }
+            })
+            .collect::<Vec<String>>();
+
+        for s in states.iter() {
+            if s != state {
+                return Ok(false);
+            }
+        }
+
+        Ok(true)
     }
 
     pub fn create_topologies(&mut self, exclude_retain: usize) -> Vec<Manifold> {
@@ -342,10 +479,19 @@ impl Neat {
         self.spawn_workers();
         let num_workers = self.workers.len();
 
+        thread::sleep(Duration::from_millis(500));
+
+        let mut all_idle = false;
+        while !all_idle {
+            all_idle = self.check_state("idle", 100)?;
+        }
+
+        println!("[All workers idle]");
+
         let mut splat: VecDeque<(String, Vec<f64>, Manifold)> = VecDeque::new();
 
         for epoch in 0..self.arch_epochs {
-            println!("[neat epoch {}, worker count {}]", epoch, num_workers);
+            println!("[NEAT epoch {}, worker count {}]", epoch, num_workers);
 
             let mut topologies = self.create_topologies(splat.len());
 
@@ -359,6 +505,9 @@ impl Neat {
                 topologies.append(&mut splat_c);
             }
 
+            let num_topologies = topologies.len();
+            println!("> created {} topologies", num_topologies);
+
             match self.distribute_topologies(topologies) {
                 Ok(()) => (),
                 Err(_) => {
@@ -367,42 +516,66 @@ impl Neat {
                 }
             }
 
-            match self.stream_data(
-                x_pool.drain(0..self.chunk_size).collect(),
-                y_pool.drain(0..self.chunk_size).collect(),
-            ) {
-                Ok(()) => (),
-                Err(_) => {
-                    println!("Stream failed!");
-                    continue;
+            let mut awaiting_data = false;
+            while !awaiting_data {
+                awaiting_data = self.check_state("awaiting_data", 100)?;
+            }
+
+            println!("> distributed {} topologies", num_topologies);
+
+            for _ in 0..self.chunks_per_generation {
+                match self.stream_data(
+                    x_pool.drain(0..self.chunk_size).collect(),
+                    y_pool.drain(0..self.chunk_size).collect(),
+                ) {
+                    Ok(()) => (),
+                    Err(_) => {
+                        println!("Stream failed!");
+                        continue;
+                    }
                 }
             }
 
-            let mut workers_received = 0;
+            println!(
+                "> streamed {} rows of training data to workers",
+                self.chunk_size * self.chunks_per_generation
+            );
 
-            while workers_received < num_workers {
-                let msgb = match self.collector_sock.recv_multipart(0) {
-                    Ok(bytes) => bytes,
-                    Err(_) => {
-                        workers_received += 1;
-                        continue;
-                    }
+            let mut trained = false;
+            while !trained {
+                trained = self.check_state("awaiting_data", 100)?;
+            }
+            println!("> workers trained");
+
+            let payload = vec!["cmd".as_bytes().to_vec(), "dump".as_bytes().to_vec()];
+            let train_results = self.notify_all(payload, 500)?;
+
+            for msgb in train_results.into_iter() {
+                let msg_type = match String::from_utf8(msgb[0].clone()) {
+                    Ok(n) => n,
+                    _ => continue,
                 };
 
-                let nn = match Manifold::load(&msgb[0]) {
+                if msg_type != "arch" {
+                    continue;
+                }
+
+                let nn = match Manifold::load(&msgb[1]) {
                     Ok(m) => m,
                     _ => continue,
                 };
 
-                let losses: Vec<f64> = match bincode::deserialize(&msgb[1].clone()) {
+                let losses: Vec<f64> = match bincode::deserialize(&msgb[2].clone()) {
                     Ok(l) => l,
                     _ => continue,
                 };
 
-                let name = match String::from_utf8(msgb[2].clone()) {
+                let name = match String::from_utf8(msgb[3].clone()) {
                     Ok(n) => n,
                     _ => continue,
                 };
+
+                let worker_loss = losses.iter().fold(0., |a, v| a + *v);
 
                 if splat.len() > self.retain {
                     let current = (name, losses, nn);
@@ -410,11 +583,15 @@ impl Neat {
                     // bake off!
                     for _ in 0..self.retain {
                         let splat_loss: f64 = splat[0].1.iter().fold(0., |a, v| a + *v);
-                        let current_loss: f64 = current.1.iter().fold(0., |a, v| a + *v);
 
-                        if splat_loss <= current_loss {
+                        if splat_loss <= worker_loss {
                             splat.rotate_left(1);
                         } else {
+                            println!(
+                                "> new elite arch from worker {} - LAYERS {:?} LOSS {}",
+                                current.0, current.2.layers, worker_loss
+                            );
+
                             splat.pop_front();
                             splat.push_back(current);
                             break;
