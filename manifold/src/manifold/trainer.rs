@@ -10,6 +10,9 @@ pub struct Hyper {
     pub sample_size: usize,
     pub learning_rate: f64,
     pub decay: f64,
+    pub patience: usize,
+    pub min_delta: f64,
+    pub early_stopping: bool,
 }
 
 impl Hyper {
@@ -19,6 +22,9 @@ impl Hyper {
             decay: 1.,
             epochs: 1000,
             sample_size: 10,
+            patience: 0,
+            min_delta: 0.,
+            early_stopping: false,
         }
     }
 }
@@ -62,7 +68,20 @@ impl Trainer<'_> {
         self
     }
 
-    pub fn until(&mut self, patience: usize, min_delta: f64) -> &mut Self {
+    pub fn set_patience(&mut self, patience: usize) -> &mut Self {
+        self.hyper.patience = patience;
+        self
+    }
+
+    pub fn set_min_delta(&mut self, min_delta: f64) -> &mut Self {
+        self.hyper.min_delta = min_delta;
+        self
+    }
+
+    pub fn until(&mut self) -> &mut Self {
+        let patience = self.hyper.patience.clone();
+        let min_delta = self.hyper.min_delta.clone();
+
         let early_terminate = move |losses: &Vec<f64>| {
             let mut deltas: Vec<f64> = vec![];
             let len = losses.len();

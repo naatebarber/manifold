@@ -34,7 +34,9 @@ fn main() {
         .set_decay(0.999)
         .set_epochs(500)
         .set_sample_size(100)
-        .until(100, 0.02)
+        .set_patience(100)
+        .set_min_delta(0.02)
+        .until()
         .train(x, y)
         .loss_graph();
 

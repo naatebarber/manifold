@@ -10,7 +10,7 @@ pub use activation::Activations;
 pub use loss::Losses;
 pub use manifold as nn;
 pub use manifold::fc::GradientRetention;
-pub use neat::Neat;
+pub use neat::{async_neat, sync_neat};
 pub use substrate::Substrate;
 
 // pub type Population = VecDeque<Arc<Mutex<Manifold>>>;

@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::error::Error;
 
 use manifold::nn::trainer::Hyper;
-use manifold::Neat;
+use manifold::sync_neat::Neat;
 use manifold::Substrate;
 use rand::{prelude::*, thread_rng};
 
@@ -36,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     neat.set_breadth(5..30)
         .set_depth(2..20)
         .set_arc_substrate(substrate)
-        .set_arch_epochs(1000)
+        .set_arch_epochs(5)
         .set_retain(1)
         .set_sample_window(10000)
         .set_chunk_size(1000)
@@ -46,18 +46,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             sample_size: 10,
             learning_rate: 0.0001,
             decay: 0.999,
+            patience: 300,
+            min_delta: 0.001,
+            early_stopping: false,
         });
 
-    let mut nn = neat.sift(x, y)?.pop().unwrap();
+    let manifolds = neat.sift(x, y)?;
 
-    let (x, y) = gen_xy(10);
-    let testxy = x.into_iter().zip(y.into_iter());
-
-    for (x, y) in testxy.into_iter() {
-        let y_pred = nn.forward(x.clone());
-        let v = y_pred.to_vec();
-
-        println!("{:?} =?= {:?}", v, y);
+    println!("\nNEAT evolved architecture:");
+    for manifold in manifolds.iter() {
+        println!("Layers {:?}", manifold.layers);
     }
 
     Ok(())
