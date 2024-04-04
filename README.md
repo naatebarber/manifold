@@ -14,6 +14,8 @@ Weight separated machine learning framework.
  - `manifold::Substrate` Basic ringbuffer substrate using a Uniform distribution. No curvature.
 
 ### TODO:
+ - make hyperparameters trainable via neat as well as network breadth and depth
+ - add self healing to neat async
  - [done] Add mutli-core distributed NEAT.
  - [done] Make manifolds serializable into binary.
  - [done] Make substrates serializable into binary.
