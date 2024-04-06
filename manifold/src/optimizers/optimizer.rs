@@ -25,7 +25,6 @@ impl Hyper {
     }
 }
 
-
 pub trait Optimizer {
     fn override_hyper(&mut self, hyper: Hyper) -> &mut Self;
     fn step(&mut self, x: Array2<f64>, y: Array2<f64>) -> &mut Self;

@@ -1,9 +1,9 @@
-use ndarray::{Array3, Axis, stack};
+use ndarray::{stack, Array1, Array2, Array3, Axis};
 use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng};
 
-use crate::nn::fc3::Manifold;
 use super::Hyper;
+use crate::nn::fc3::Manifold;
 
 pub struct MiniBatchGradientDescent<'a> {
     manifold: &'a mut Manifold,
@@ -107,8 +107,36 @@ impl MiniBatchGradientDescent<'_> {
         self
     }
 
+    pub fn prepare(x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> (Array3<f64>, Array3<f64>) {
+        let x_a2 = x
+            .into_iter()
+            .map(|xv| Array1::from(xv).insert_axis(Axis(0)))
+            .collect::<Vec<Array2<f64>>>();
+        let y_a2 = y
+            .into_iter()
+            .map(|yv| Array1::from(yv).insert_axis(Axis(0)))
+            .collect::<Vec<Array2<f64>>>();
+
+        let x_3 = stack(
+            Axis(0),
+            &x_a2.iter().map(|ar| ar.view()).collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let y_3 = stack(
+            Axis(0),
+            &y_a2.iter().map(|ar| ar.view()).collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        (x_3, y_3)
+    }
+
     pub fn train(&mut self, x: &Array3<f64>, y: &Array3<f64>) -> &mut Self {
-        assert_eq!(x.shape(), y.shape(), "X and Y must be of the same shape for training.");
+        assert_eq!(
+            x.shape(),
+            y.shape(),
+            "X and Y must be of the same shape for training."
+        );
 
         for epoch in 0..self.hyper.epochs {
             let mut indices: Vec<usize> = Vec::with_capacity(self.hyper.sample_size);
@@ -117,8 +145,14 @@ impl MiniBatchGradientDescent<'_> {
                 indices.push(rng.gen_range(0..x.shape()[0]));
             }
 
-            let batch_x_vec = indices.iter().map(|ix| x.index_axis(Axis(0), *ix)).collect::<Vec<_>>();
-            let batch_y_vec = indices.iter().map(|ix| y.index_axis(Axis(0), *ix)).collect::<Vec<_>>();
+            let batch_x_vec = indices
+                .iter()
+                .map(|ix| x.index_axis(Axis(0), *ix))
+                .collect::<Vec<_>>();
+            let batch_y_vec = indices
+                .iter()
+                .map(|ix| y.index_axis(Axis(0), *ix))
+                .collect::<Vec<_>>();
 
             let batch_x: Array3<f64> = stack(Axis(0), &batch_x_vec).unwrap();
             let batch_y: Array3<f64> = stack(Axis(0), &batch_y_vec).unwrap();
@@ -129,8 +163,11 @@ impl MiniBatchGradientDescent<'_> {
             let y_reshaped = batch_y.remove_axis(Axis(1));
 
             let loss = self.manifold.loss.wake();
-            let a_loss = loss.a(y_pred_reshaped, y_reshaped);
+            let a_loss = loss.a(y_pred_reshaped.clone(), y_reshaped.clone());
             let sum_batch_loss = a_loss.sum() / a_loss.len() as f64;
+
+            self.manifold
+                .backwards(y_pred_reshaped, y_reshaped, loss, self.hyper.learning_rate);
 
             self.losses.push(sum_batch_loss);
             self.hyper.learning_rate *= self.hyper.decay;
@@ -141,7 +178,10 @@ impl MiniBatchGradientDescent<'_> {
             }
 
             if self.verbose {
-                println!("({}/{}) Loss = {}", epoch, self.hyper.epochs, sum_batch_loss);
+                println!(
+                    "({}/{}) Loss = {}",
+                    epoch, self.hyper.epochs, sum_batch_loss
+                );
             }
         }
 

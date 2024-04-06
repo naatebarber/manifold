@@ -1,7 +1,7 @@
 use std::fmt::Debug;
 use std::rc::Rc;
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2, Array3, Axis};
 use ndarray_stats::QuantileExt;
 use serde::{Deserialize, Serialize};
 
@@ -26,7 +26,11 @@ impl MSE {
 
 impl Loss for MSE {
     fn a(&self, pred: Array2<f64>, target: Array2<f64>) -> Array1<f64> {
-        assert_eq!(pred.shape(), target.shape(), "Predictions and targets must have the same shape.");
+        assert_eq!(
+            pred.shape(),
+            target.shape(),
+            "Predictions and targets must have the same shape."
+        );
 
         let features = pred.shape()[1];
 
@@ -56,11 +60,20 @@ impl SoftmaxCrossEntropy {
 
 impl SoftmaxCrossEntropy {
     pub fn softmax(&self, pred: Array2<f64>) -> Array2<f64> {
+        let batch_size = pred.shape()[0];
+
         let max_mask = pred.map_axis(Axis(1), |axis| *axis.max().unwrap());
-        let applied_max_mask = &pred - &max_mask.broadcast(pred.raw_dim()).unwrap();
+        let mask_2d = max_mask.into_shape((batch_size, 1)).unwrap();
+        let broadcast_mask = mask_2d.broadcast(pred.raw_dim()).unwrap();
+
+        let applied_max_mask = &pred - &broadcast_mask;
+
         let exps = applied_max_mask.mapv_into(|x| x.exp());
         let sum_exps = exps.sum_axis(Axis(1));
-        let softmax_pred = exps / &sum_exps.broadcast((pred.nrows(), 1)).unwrap();
+        let sum_exps_2d = sum_exps.into_shape((pred.nrows(), 1)).unwrap();
+
+        let softmax_pred = exps / &sum_exps_2d;
+
         softmax_pred
     }
 }

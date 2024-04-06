@@ -1,15 +1,16 @@
 mod activation;
-pub mod optimizers;
 pub mod f;
 mod loss;
 mod loss3;
 pub mod manifold;
 pub mod neat;
+pub mod optimizers;
 pub mod substrate;
 mod util;
 
 pub use activation::Activations;
 pub use loss::Losses;
+pub use loss3::Losses as Losses3;
 pub use manifold as nn;
 pub use manifold::fc::GradientRetention;
 pub use neat::{async_neat, sync_neat};

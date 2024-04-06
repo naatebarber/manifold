@@ -2,8 +2,8 @@ use ndarray::Array1;
 use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng};
 
-use crate::nn::fc::Manifold;
 use super::Hyper;
+use crate::nn::fc::Manifold;
 
 pub struct MiniBatchGradientDescent<'a> {
     manifold: &'a mut Manifold,
