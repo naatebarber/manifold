@@ -40,7 +40,6 @@ impl Loss for MSE {
     fn d(&self, pred: Array2<f64>, target: Array2<f64>) -> Array2<f64> {
         let features = pred.shape()[1];
 
-        let len = pred.len();
         let diff = pred - target;
         let dx = diff.mapv_into(|x| (x * 2.) / features as f64);
         dx

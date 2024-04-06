@@ -7,7 +7,7 @@ use std::sync::Arc;
 use ndarray::{Array, Array1, Array2, Array3, Axis};
 use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::RandomExt;
-use rand::{seq, thread_rng, Rng};
+use rand::{thread_rng, Rng};
 
 use serde::{self, Deserialize, Serialize};
 
@@ -74,7 +74,7 @@ impl Layer {
         self
     }
 
-    pub fn forward(&mut self, mut x: Array3<f64>) -> Array3<f64> {
+    pub fn forward(&mut self, x: Array3<f64>) -> Array3<f64> {
         let batch_size = x.shape()[0];
         let features = x.shape()[1];
         let sequence_length = x.shape()[2];
