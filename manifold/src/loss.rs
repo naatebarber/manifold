@@ -49,12 +49,19 @@ impl SoftmaxCrossEntropy {
     }
 }
 
-impl Loss for SoftmaxCrossEntropy {
-    fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
+impl SoftmaxCrossEntropy {
+    pub fn softmax(&self, pred: Array1<f64>) -> Array1<f64> {
         let max = pred.max().unwrap();
         let exps = pred.map(|v| (v - max).exp());
         let sum_exps = exps.sum();
         let softmax_pred = exps.map(|v| v / sum_exps);
+        softmax_pred
+    }
+}
+
+impl Loss for SoftmaxCrossEntropy {
+    fn a(&self, pred: Array1<f64>, target: Array1<f64>) -> f64 {
+        let softmax_pred = self.softmax(pred);
 
         let log_pred = softmax_pred.map(|x| x.ln());
         let prod = log_pred * target;
@@ -62,7 +69,7 @@ impl Loss for SoftmaxCrossEntropy {
     }
 
     fn d(&self, pred: Array1<f64>, target: Array1<f64>) -> Array1<f64> {
-        pred - target
+        self.softmax(pred) - target
     }
 }
 

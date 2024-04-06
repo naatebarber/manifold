@@ -5,9 +5,7 @@ use manifold::Losses;
 use manifold::Substrate;
 use rand::{prelude::*, thread_rng};
 
-fn gen_training_data(size: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
-    let mut x: Vec<Vec<f64>> = vec![];
-    let mut y: Vec<Vec<f64>> = vec![];
+fn gen_training_data() -> (Vec<f64>, Vec<f64>) {
     let mut rng = thread_rng();
 
     let classes: Vec<(Vec<f64>, Vec<f64>)> = vec![
@@ -17,43 +15,51 @@ fn gen_training_data(size: usize) -> (Vec<Vec<f64>>, Vec<Vec<f64>>) {
         (vec![0., 0.], vec![0., 1.]),
     ];
 
-    for _ in 0..size {
-        let data = classes.choose(&mut rng).unwrap();
-        x.push(data.0.clone());
-        y.push(data.1.clone());
-    }
-
-    (x, y)
+    let data = classes.choose(&mut rng).unwrap();
+    (data.0.clone(), data.1.clone())
 }
 
 fn main() {
-    let (train_x, train_y) = gen_training_data(500000);
-    let (test_x, test_y) = gen_training_data(100);
+    let (mut x, mut y) = (vec![], vec![]);
+    for _ in 0..50000 {
+        let (_x, _y) = gen_training_data();
+        x.push(_x);
+        y.push(_y);
+    }
 
-    let substrate = Substrate::new(10000, 0.0..1.0).share();
+    let (mut tx, mut ty) = (vec![], vec![]);
+    for _ in 0..50 {
+        let (_x, _y) = gen_training_data();
+        tx.push(_x);
+        ty.push(_y);
+    }
+
+    let substrate = Substrate::new(100000, 0.0..1.0).share();
 
     let mut nn = Manifold::new(substrate, 2, 2, vec![16]);
     nn.set_hidden_activation(Activations::Relu)
         .set_loss(Losses::SoftmaxCrossEntropy)
+        .set_gradient_retention(manifold::GradientRetention::Zero)
         .weave()
         .gather()
-        .set_gradient_retention(manifold::GradientRetention::Roll)
         .get_trainer()
-        .set_learning_rate(0.000)
-        .set_decay(0.995)
-        .set_epochs(1000)
+        .set_learning_rate(0.01)
+        .set_decay(0.999)
+        .set_epochs(4000)
         .set_sample_size(10)
-        .train(train_x, train_y);
+        .verbose()
+        .train(x, y)
+        .loss_graph();
 
-    let testxy = test_x
+    let txy = tx
         .iter()
-        .zip(test_y.iter())
+        .zip(ty.iter())
         .collect::<Vec<(&Vec<f64>, &Vec<f64>)>>();
 
     let mut correct = 0;
     let mut total = 0;
 
-    for (x, y) in testxy.into_iter() {
+    for (x, y) in txy.into_iter() {
         let y_pred = nn.forward(x.clone());
         let v = y_pred.to_vec();
         let choice_pred = f::argmax(&v);
