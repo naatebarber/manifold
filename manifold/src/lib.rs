@@ -1,6 +1,8 @@
 mod activation;
+pub mod optimizers;
 pub mod f;
 mod loss;
+mod loss3;
 pub mod manifold;
 pub mod neat;
 pub mod substrate;

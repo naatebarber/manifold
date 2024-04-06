@@ -9,9 +9,9 @@ import random
 class XOR(nn.Module):
     def __init__(self):
         super(XOR, self).__init__()
-        self.fc1 = nn.Linear(2, 4)
-        self.fc2 = nn.Linear(4, 2)
-        self.optim = optim.SGD(self.parameters(), lr=0.001)
+        self.fc1 = nn.Linear(2, 8)
+        self.fc2 = nn.Linear(8, 2)
+        self.optim = optim.SGD(self.parameters(), lr=0.1)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))

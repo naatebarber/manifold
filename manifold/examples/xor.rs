@@ -21,7 +21,7 @@ fn gen_training_data() -> (Vec<f64>, Vec<f64>) {
 
 fn main() {
     let (mut x, mut y) = (vec![], vec![]);
-    for _ in 0..50000 {
+    for _ in 0..5000 {
         let (_x, _y) = gen_training_data();
         x.push(_x);
         y.push(_y);
@@ -34,22 +34,21 @@ fn main() {
         ty.push(_y);
     }
 
-    let substrate = Substrate::new(100000, 0.0..1.0).share();
+    let substrate = Substrate::new(10000, 0.0..1.0).share();
 
-    let mut nn = Manifold::new(substrate, 2, 2, vec![16]);
+    let mut nn = Manifold::new(substrate, 2, 2, vec![4]);
     nn.set_hidden_activation(Activations::Relu)
         .set_loss(Losses::SoftmaxCrossEntropy)
         .set_gradient_retention(manifold::GradientRetention::Zero)
         .weave()
         .gather()
         .get_trainer()
-        .set_learning_rate(0.01)
+        .set_learning_rate(0.001)
         .set_decay(0.999)
         .set_epochs(4000)
-        .set_sample_size(10)
+        .set_sample_size(1)
         .verbose()
-        .train(x, y)
-        .loss_graph();
+        .train(x, y);
 
     let txy = tx
         .iter()
