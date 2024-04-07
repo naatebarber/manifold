@@ -4,8 +4,8 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use ndarray::{Array, Array1, Array2, Array3, Axis};
+use ndarray_rand::rand_distr::Uniform;
 use ndarray_rand::{rand_distr, RandomExt};
-use ndarray_rand::{rand_distr::Uniform};
 use rand::{thread_rng, Rng};
 
 use serde::{self, Deserialize, Serialize};
@@ -144,11 +144,7 @@ pub struct Manifold {
 }
 
 impl Manifold {
-    pub fn new(
-        d_in: usize,
-        d_out: usize,
-        layers: Vec<usize>,
-    ) -> Manifold {
+    pub fn new(d_in: usize, d_out: usize, layers: Vec<usize>) -> Manifold {
         Manifold {
             d_in,
             d_out,
@@ -214,12 +210,8 @@ impl Manifold {
         let w_shape = (p_dim, self.d_out);
         let b_shape = w_shape.1;
 
-        self.web.push(Layer::new(
-            x_shape,
-            w_shape,
-            b_shape,
-            Activations::Identity,
-        ));
+        self.web
+            .push(Layer::new(x_shape, w_shape, b_shape, Activations::Identity));
         self
     }
 
@@ -237,8 +229,8 @@ impl Manifold {
         loss: Rc<dyn Loss>,
         learning_rate: f64,
     ) {
+        // TODO Check loss next. Batch is not training.
         let grad_output_i = loss.d(y_pred, y);
-
         let mut grad_output = grad_output_i.insert_axis(Axis(1));
 
         for layer in self.web.iter_mut().rev() {

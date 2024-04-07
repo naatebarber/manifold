@@ -46,8 +46,8 @@ fn main() {
     trainer
         .set_learning_rate(0.01)
         .set_decay(0.999)
-        .set_epochs(1000)
-        .set_sample_size(100)
+        .set_epochs(1)
+        .set_sample_size(4)
         .verbose()
         .train(&threes.0, &threes.1);
 }
