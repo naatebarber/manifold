@@ -35,7 +35,7 @@ fn main() {
         ty.push(_y);
     }
 
-    let mut nn = Manifold::new(2, 2, vec![4]);
+    let mut nn = Manifold::new(2, 2, vec![12]);
     nn.set_hidden_activation(Activations::Relu)
         .set_loss(Losses3::SoftmaxCrossEntropy)
         .weave();
@@ -46,8 +46,9 @@ fn main() {
     trainer
         .set_learning_rate(0.01)
         .set_decay(0.999)
-        .set_epochs(1)
-        .set_sample_size(4)
+        .set_epochs(1000)
+        .set_sample_size(2)
         .verbose()
-        .train(&threes.0, &threes.1);
+        .train(&threes.0, &threes.1)
+        .loss_graph();
 }

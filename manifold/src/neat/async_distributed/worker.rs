@@ -5,7 +5,7 @@ use std::sync::Arc;
 use zmq::{poll, Context, PULL, PUSH, SUB};
 
 use super::super::data::TrainChunk;
-use crate::nn::fc::Manifold;
+use crate::nn::fc_single::Manifold;
 use crate::nn::trainer::Hyper;
 use crate::Substrate;
 

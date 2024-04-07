@@ -88,7 +88,8 @@ impl Loss for SoftmaxCrossEntropy {
     }
 
     fn d(&self, pred: Array2<f64>, target: Array2<f64>) -> Array2<f64> {
-        self.softmax(pred) - target
+        let softmax_pred = self.softmax(pred);
+        softmax_pred - target
     }
 }
 

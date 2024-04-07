@@ -1,4 +1,4 @@
-use manifold::nn::fc::Manifold;
+use manifold::nn::fc_single::Manifold;
 use manifold::Substrate;
 use rand::{prelude::*, thread_rng};
 

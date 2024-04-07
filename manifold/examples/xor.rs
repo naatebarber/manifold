@@ -1,5 +1,5 @@
 use manifold::f;
-use manifold::nn::fc::Manifold;
+use manifold::nn::fc_single::Manifold;
 use manifold::Activations;
 use manifold::Losses;
 use manifold::Substrate;

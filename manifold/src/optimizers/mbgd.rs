@@ -3,7 +3,7 @@ use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng};
 
 use super::Hyper;
-use crate::nn::fc::Manifold;
+use crate::nn::fc_single::Manifold;
 
 pub struct MiniBatchGradientDescent<'a> {
     manifold: &'a mut Manifold,

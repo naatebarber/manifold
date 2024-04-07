@@ -13,7 +13,7 @@ use zmq::{
 };
 
 use crate::{
-    manifold::{fc::Manifold, trainer::Hyper},
+    manifold::{fc_single::Manifold, trainer::Hyper},
     Substrate,
 };
 

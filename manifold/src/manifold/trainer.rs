@@ -2,7 +2,7 @@ use ndarray::Array1;
 use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng};
 
-use super::fc::Manifold;
+use super::fc_single::Manifold;
 
 #[derive(Clone)]
 pub struct Hyper {
