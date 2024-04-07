@@ -1,8 +1,9 @@
 use std::error::Error;
 
-use manifold::async_neat::Neat;
-use manifold::nn::trainer::Hyper;
+use manifold::neat::Neat;
+use manifold::optimizers::Hyper;
 use manifold::Substrate;
+
 use rand::{prelude::*, thread_rng};
 
 fn generator() -> (Vec<f64>, Vec<f64>) {

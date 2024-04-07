@@ -4,9 +4,10 @@ use std::error::Error;
 use std::sync::Arc;
 use zmq::{poll, Context, PULL, PUSH, SUB};
 
-use super::super::data::TrainChunk;
-use crate::nn::fc_single::Manifold;
-use crate::nn::trainer::Hyper;
+use super::data::TrainChunk;
+use crate::nn::DNN;
+use crate::optimizers::{Hyper, MiniBatchGradientDescent};
+use crate::util::as_tensor;
 use crate::Substrate;
 
 pub fn worker(
@@ -60,7 +61,7 @@ pub fn worker(
             continue;
         }
 
-        let mut manifold = match Manifold::load(&worker_msgb[1]) {
+        let mut manifold = match DNN::load(&worker_msgb[1]) {
             Ok(manifold) => manifold,
             Err(_) => {
                 eprintln!("[{}] Received malformed arch binary.", name);
@@ -112,12 +113,12 @@ pub fn worker(
             while let Some(chunk) = chunks.pop_front() {
                 let x_data = chunk.0;
                 let y_data = chunk.1;
+                let (x, y) = as_tensor(x_data, y_data);
 
-                let mut trainer = manifold.set_substrate(substrate.clone()).get_trainer();
+                let nn = manifold.set_substrate(substrate.clone());
+                let mut trainer = MiniBatchGradientDescent::new(nn);
 
-                trainer
-                    .override_hyper((*hyper).clone())
-                    .train(x_data, y_data);
+                trainer.override_hyper((*hyper).clone()).train(&x, &y);
 
                 worker_losses.extend(trainer.losses.drain(..));
                 consumed_chunks += 1;

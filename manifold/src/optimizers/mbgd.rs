@@ -1,20 +1,20 @@
-use ndarray::Array1;
+use ndarray::{stack, Array1, Array2, Array3, Axis};
 use plotly::{Bar, Plot};
 use rand::{prelude::*, thread_rng};
 
 use super::Hyper;
-use crate::nn::fc_single::Manifold;
+use crate::manifold::types::Manifold;
 
-pub struct MiniBatchGradientDescent<'a> {
-    manifold: &'a mut Manifold,
+pub struct MiniBatchGradientDescent<'a, T: Manifold> {
+    manifold: &'a mut T,
     hyper: Hyper,
     early_terminate: Box<dyn Fn(&Vec<f64>) -> bool>,
     verbose: bool,
     pub losses: Vec<f64>,
 }
 
-impl MiniBatchGradientDescent<'_> {
-    pub fn new(manifold: &mut Manifold) -> MiniBatchGradientDescent {
+impl<'a, T: Manifold> MiniBatchGradientDescent<'a, T> {
+    pub fn new(manifold: &mut T) -> MiniBatchGradientDescent<T> {
         MiniBatchGradientDescent {
             manifold,
             hyper: Hyper::new(),
@@ -107,53 +107,81 @@ impl MiniBatchGradientDescent<'_> {
         self
     }
 
-    pub fn step(&mut self, x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> &mut Self {
-        let xy = x
+    pub fn prepare(x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> (Array3<f64>, Array3<f64>) {
+        let x_a2 = x
             .into_iter()
-            .zip(y.into_iter())
-            .collect::<Vec<(Vec<f64>, Vec<f64>)>>();
-        let mut rng = thread_rng();
+            .map(|xv| Array1::from(xv).insert_axis(Axis(0)))
+            .collect::<Vec<Array2<f64>>>();
+        let y_a2 = y
+            .into_iter()
+            .map(|yv| Array1::from(yv).insert_axis(Axis(0)))
+            .collect::<Vec<Array2<f64>>>();
+
+        let x_3 = stack(
+            Axis(0),
+            &x_a2.iter().map(|ar| ar.view()).collect::<Vec<_>>(),
+        )
+        .unwrap();
+        let y_3 = stack(
+            Axis(0),
+            &y_a2.iter().map(|ar| ar.view()).collect::<Vec<_>>(),
+        )
+        .unwrap();
+
+        (x_3, y_3)
+    }
+
+    pub fn train(&mut self, x: &Array3<f64>, y: &Array3<f64>) -> &mut Self {
+        assert_eq!(
+            x.shape(),
+            y.shape(),
+            "X and Y must be of the same shape for training."
+        );
 
         for epoch in 0..self.hyper.epochs {
-            let sample = xy
-                .choose_multiple(&mut rng, self.hyper.sample_size)
-                .collect::<Vec<&(Vec<f64>, Vec<f64>)>>();
-            let mut total_loss: Vec<f64> = vec![];
-
-            for &xy in sample.iter() {
-                let (x, y) = xy.clone();
-
-                let y_pred = self.manifold.forward(x);
-                total_loss.push(
-                    self.manifold
-                        .loss
-                        .wake()
-                        .a(y_pred.clone(), Array1::from(y.clone())),
-                );
-                self.manifold.backwards(
-                    y_pred,
-                    y,
-                    self.manifold.loss.wake(),
-                    self.hyper.learning_rate,
-                );
+            let mut indices: Vec<usize> = Vec::with_capacity(self.hyper.sample_size);
+            let mut rng = thread_rng();
+            for _ in 0..self.hyper.sample_size {
+                indices.push(rng.gen_range(0..x.shape()[0]));
             }
 
+            let batch_x_vec = indices
+                .iter()
+                .map(|ix| x.index_axis(Axis(0), *ix))
+                .collect::<Vec<_>>();
+            let batch_y_vec = indices
+                .iter()
+                .map(|ix| y.index_axis(Axis(0), *ix))
+                .collect::<Vec<_>>();
+
+            let batch_x: Array3<f64> = stack(Axis(0), &batch_x_vec).unwrap();
+            let batch_y: Array3<f64> = stack(Axis(0), &batch_y_vec).unwrap();
+
+            let y_pred = self.manifold.forward(batch_x);
+            let y_pred_reshaped = y_pred.remove_axis(Axis(1));
+
+            let y_reshaped = batch_y.remove_axis(Axis(1));
+
+            let loss = self.manifold.get_loss_fn();
+            let a_loss = loss.a(y_pred_reshaped.clone(), y_reshaped.clone());
+            let sum_batch_loss = a_loss.sum() / a_loss.len() as f64;
+
+            self.manifold
+                .backwards(y_pred_reshaped, y_reshaped, loss, self.hyper.learning_rate);
+
+            self.losses.push(sum_batch_loss);
             self.hyper.learning_rate *= self.hyper.decay;
 
-            let ct = total_loss.len() as f64;
-            let avg_loss = total_loss.into_iter().fold(0., |a, v| a + v) / ct;
-            self.losses.push(avg_loss);
-
-            if (self.early_terminate)(&self.losses) {
-                if self.verbose {
-                    println!("Early termination condition met.");
-                }
-
+            if (&self.early_terminate)(&self.losses) {
+                println!("Early termination condition met, stopping.");
                 break;
             }
 
             if self.verbose {
-                println!("({}/{}) Loss = {}", epoch, self.hyper.epochs, avg_loss);
+                println!(
+                    "({}/{}) Loss = {}",
+                    epoch, self.hyper.epochs, sum_batch_loss
+                );
             }
         }
 

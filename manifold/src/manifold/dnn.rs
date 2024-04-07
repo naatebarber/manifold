@@ -1,32 +1,25 @@
-use std::collections::VecDeque;
 use std::error::Error;
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use ndarray::{Array1, Array2, Axis};
+use ndarray::{Array1, Array2, Array3, Axis};
 use rand::{thread_rng, Rng};
 
 use serde::{self, Deserialize, Serialize};
 
 use crate::activation::Activations;
-use crate::layers::DenseSingle;
+use crate::layers::Dense;
 use crate::loss::{Loss, Losses};
 use crate::substrate::Substrate;
 
-use super::trainer::Trainer;
-
-#[derive(Serialize, Deserialize, Clone)]
-pub enum GradientRetention {
-    Roll,
-    Zero,
-}
+use super::types::{GradientRetention, Manifold};
 
 pub type LayerSchema = Vec<usize>;
-pub type Web = Vec<DenseSingle>;
+pub type Web = Vec<Dense>;
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct Manifold {
+pub struct DNN {
     #[serde(skip)]
     substrate: Arc<Substrate>,
     d_in: usize,
@@ -39,14 +32,9 @@ pub struct Manifold {
     pub loss: Losses,
 }
 
-impl Manifold {
-    pub fn new(
-        substrate: Arc<Substrate>,
-        d_in: usize,
-        d_out: usize,
-        layers: Vec<usize>,
-    ) -> Manifold {
-        Manifold {
+impl DNN {
+    pub fn new(substrate: Arc<Substrate>, d_in: usize, d_out: usize, layers: Vec<usize>) -> DNN {
+        DNN {
             substrate,
             d_in,
             d_out,
@@ -59,19 +47,14 @@ impl Manifold {
         }
     }
 
-    pub fn dynamic(
-        d_in: usize,
-        d_out: usize,
-        breadth: Range<usize>,
-        depth: Range<usize>,
-    ) -> Manifold {
+    pub fn dynamic(d_in: usize, d_out: usize, breadth: Range<usize>, depth: Range<usize>) -> DNN {
         let mut rng = thread_rng();
         let depth = rng.gen_range(depth);
         let layers = (0..depth)
             .map(|_| rng.gen_range(breadth.clone()))
             .collect::<Vec<usize>>();
 
-        Manifold::new(Arc::new(Substrate::blank()), d_in, d_out, layers)
+        DNN::new(Arc::new(Substrate::blank()), d_in, d_out, layers)
     }
 
     pub fn set_substrate(&mut self, substrate: Arc<Substrate>) -> &mut Self {
@@ -94,8 +77,25 @@ impl Manifold {
         self
     }
 
-    pub fn weave(&mut self) -> &mut Self {
-        let mut x_shape = (1, self.d_in);
+    pub fn gather(&mut self) -> &mut Self {
+        for layer in self.web.iter_mut() {
+            layer.gather(&self.substrate);
+        }
+        self
+    }
+
+    pub fn dump(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
+        Ok(bincode::serialize(self)?)
+    }
+
+    pub fn load(serialized: &Vec<u8>) -> Result<DNN, Box<dyn Error>> {
+        Ok(bincode::deserialize(serialized)?)
+    }
+}
+
+impl Manifold for DNN {
+    fn weave(&mut self) -> &mut Self {
+        let mut x_shape = (1, 1, self.d_in);
         let mut w_shape: (usize, usize);
         let mut b_shape: usize;
         let mut p_dim = self.d_in;
@@ -104,7 +104,7 @@ impl Manifold {
             w_shape = (p_dim, *layer_size);
             b_shape = w_shape.1;
 
-            self.web.push(DenseSingle::new(
+            self.web.push(Dense::new(
                 self.substrate.size,
                 x_shape,
                 w_shape,
@@ -112,13 +112,13 @@ impl Manifold {
                 self.hidden_activation,
             ));
             p_dim = *layer_size;
-            x_shape = (1, w_shape.1);
+            x_shape = (1, 1, w_shape.1);
         }
 
         let w_shape = (p_dim, self.d_out);
         let b_shape = w_shape.1;
 
-        self.web.push(DenseSingle::new(
+        self.web.push(Dense::new(
             self.substrate.size,
             x_shape,
             w_shape,
@@ -128,40 +128,23 @@ impl Manifold {
         self
     }
 
-    pub fn gather(&mut self) -> &mut Self {
-        for layer in self.web.iter_mut() {
-            layer.gather(&self.substrate);
-        }
-        self
-    }
-
-    fn prepare(&self, x: Vec<f64>) -> Array2<f64> {
-        let l = x.len();
-        let mut xvd: VecDeque<f64> = VecDeque::from(x);
-        Array2::zeros((1, l)).mapv_into(|_| xvd.pop_front().unwrap())
-    }
-
-    pub fn forward(&mut self, xv: Vec<f64>) -> Array1<f64> {
-        let mut x = self.prepare(xv);
+    fn forward(&mut self, mut x: Array3<f64>) -> Array3<f64> {
         for layer in self.web.iter_mut() {
             x = layer.forward(x);
         }
-        let shape = x.len();
-        x.into_shape(shape).unwrap()
+        x
     }
 
-    pub fn backwards(
+    fn backwards(
         &mut self,
-        y_pred: Array1<f64>,
-        y: Vec<f64>,
+        y_pred: Array2<f64>,
+        y: Array2<f64>,
         loss: Rc<dyn Loss>,
         learning_rate: f64,
     ) {
-        let y_target = Array1::from(y);
-        let grad_output_i = loss.d(y_pred, y_target);
+        let grad_output_i = loss.d(y_pred, y);
 
-        let grad_output_shape = (1, grad_output_i.len());
-        let mut grad_output = grad_output_i.into_shape(grad_output_shape).unwrap();
+        let mut grad_output = grad_output_i.insert_axis(Axis(1));
 
         for layer in self.web.iter_mut().rev() {
             grad_output = layer.backward(grad_output);
@@ -193,15 +176,7 @@ impl Manifold {
         }
     }
 
-    pub fn get_trainer(&mut self) -> Trainer {
-        Trainer::new(self)
-    }
-
-    pub fn dump(&mut self) -> Result<Vec<u8>, Box<dyn Error>> {
-        Ok(bincode::serialize(self)?)
-    }
-
-    pub fn load(serialized: &Vec<u8>) -> Result<Manifold, Box<dyn Error>> {
-        Ok(bincode::deserialize(serialized)?)
+    fn get_loss_fn(&mut self) -> Rc<dyn Loss> {
+        self.loss.wake()
     }
 }

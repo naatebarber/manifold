@@ -1,4 +1,6 @@
-pub mod fc3;
-pub mod fc3_iso;
-pub mod fc_single;
-pub mod trainer;
+pub mod dnn;
+pub mod dnn_iso;
+pub mod types;
+
+pub use dnn::DNN;
+pub use dnn_iso::DNNIsolated;

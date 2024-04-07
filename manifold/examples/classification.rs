@@ -1,8 +1,12 @@
-use manifold::f;
-use manifold::nn::fc_single::Manifold;
-use manifold::Activations;
+use manifold::nn::types::{GradientRetention, Manifold};
+use manifold::nn::DNN;
+use manifold::optimizers::MiniBatchGradientDescent;
+use manifold::util::as_tensor;
 use manifold::Losses;
+
+use manifold::Activations;
 use manifold::Substrate;
+
 use rand::{prelude::*, thread_rng};
 
 fn gen_training_data() -> (Vec<f64>, Vec<f64>) {
@@ -36,40 +40,22 @@ fn main() {
 
     let substrate = Substrate::new(10000, 0.0..1.0).share();
 
-    let mut nn = Manifold::new(substrate, 2, 2, vec![4]);
+    let mut nn = DNN::new(substrate, 2, 2, vec![8, 4]);
     nn.set_hidden_activation(Activations::Relu)
-        .set_loss(Losses::SoftmaxCrossEntropy)
-        .set_gradient_retention(manifold::GradientRetention::Zero)
+        .set_loss(Losses::MeanSquaredError)
+        .set_gradient_retention(GradientRetention::Roll)
         .weave()
-        .gather()
-        .get_trainer()
-        .set_learning_rate(0.001)
+        .gather();
+
+    let threes = as_tensor(x, y);
+
+    let mut trainer = MiniBatchGradientDescent::new(&mut nn);
+    trainer
+        .set_learning_rate(0.1)
         .set_decay(0.999)
-        .set_epochs(4000)
-        .set_sample_size(1)
+        .set_epochs(1000)
+        .set_sample_size(100)
         .verbose()
-        .train(x, y);
-
-    let txy = tx
-        .iter()
-        .zip(ty.iter())
-        .collect::<Vec<(&Vec<f64>, &Vec<f64>)>>();
-
-    let mut correct = 0;
-    let mut total = 0;
-
-    for (x, y) in txy.into_iter() {
-        let y_pred = nn.forward(x.clone());
-        let v = y_pred.to_vec();
-        let choice_pred = f::argmax(&v);
-        let actual = f::argmax(y);
-
-        total += 1;
-
-        if choice_pred == actual {
-            correct += 1;
-        }
-    }
-
-    println!("Accuracy: {}%", (correct as f64 / total as f64) * 100.);
+        .train(&threes.0, &threes.1)
+        .loss_graph();
 }

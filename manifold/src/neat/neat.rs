@@ -12,13 +12,12 @@ use zmq::{
     SocketType::{PUB, PULL, PUSH},
 };
 
-use crate::{
-    manifold::{fc_single::Manifold, trainer::Hyper},
-    Substrate,
-};
+use crate::manifold::DNN;
+use crate::optimizers::Hyper;
+use crate::Substrate;
 
-use super::super::{LiveDataset, NeatDataset, RollingDataset};
 use super::worker::worker;
+use super::{LiveDataset, NeatDataset, RollingDataset};
 
 pub enum EvolutionStyle {
     MonteCarlo,
@@ -245,7 +244,7 @@ impl Neat {
 
     pub fn push_manifold(&self) -> Result<(), Box<dyn Error>> {
         let mut next_manifold = match self.evolution_style {
-            EvolutionStyle::MonteCarlo | EvolutionStyle::Genetic => Manifold::dynamic(
+            EvolutionStyle::MonteCarlo | EvolutionStyle::Genetic => DNN::dynamic(
                 self.d_in,
                 self.d_out,
                 self.breadth.clone(),
@@ -261,11 +260,11 @@ impl Neat {
         Ok(())
     }
 
-    pub fn sift(&mut self) -> Result<Vec<Manifold>, Box<dyn Error>> {
+    pub fn sift(&mut self) -> Result<Vec<DNN>, Box<dyn Error>> {
         self.spawn_workers();
 
         let mut completed_archs = 0;
-        let mut best: VecDeque<(Manifold, f64)> = VecDeque::new();
+        let mut best: VecDeque<(DNN, f64)> = VecDeque::new();
 
         let mut sockets = [self.collector_sock.as_poll_item(zmq::POLLIN)];
 
@@ -308,7 +307,7 @@ impl Neat {
                     let manifold_binary = &msgb[1];
                     let losses_binary = &msgb[2];
 
-                    let manifold = match Manifold::load(manifold_binary) {
+                    let manifold = match DNN::load(manifold_binary) {
                         Ok(m) => m,
                         Err(_) => continue,
                     };

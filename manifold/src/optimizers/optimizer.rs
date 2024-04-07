@@ -1,5 +1,3 @@
-use ndarray::Array2;
-
 #[derive(Clone)]
 pub struct Hyper {
     pub epochs: usize,
@@ -23,9 +21,4 @@ impl Hyper {
             early_stopping: false,
         }
     }
-}
-
-pub trait Optimizer {
-    fn override_hyper(&mut self, hyper: Hyper) -> &mut Self;
-    fn step(&mut self, x: Array2<f64>, y: Array2<f64>) -> &mut Self;
 }
