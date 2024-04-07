@@ -2,24 +2,20 @@ use core::fmt::Debug;
 use std::error::Error;
 use std::ops::Range;
 use std::rc::Rc;
-use std::sync::Arc;
 
 use ndarray::{Array, Array1, Array2, Array3, Axis};
-use ndarray_rand::rand_distr::Uniform;
-use ndarray_rand::RandomExt;
+use ndarray_rand::{rand_distr, RandomExt};
+use ndarray_rand::{rand_distr::Uniform};
 use rand::{thread_rng, Rng};
 
 use serde::{self, Deserialize, Serialize};
 
 use crate::activation::Activations;
 use crate::loss3::{Loss, Losses};
-use crate::substrate::Substrate;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct Layer {
     pub x: Array3<f64>,
-    pub wi: Array2<usize>,
-    pub bi: Array1<usize>,
     pub w: Array2<f64>,
     pub b: Array1<f64>,
     pub d_z: Array3<f64>,
@@ -30,7 +26,6 @@ pub struct Layer {
 
 impl Layer {
     pub fn new(
-        pool_size: usize,
         x_shape: (usize, usize, usize),
         w_shape: (usize, usize),
         b_shape: usize,
@@ -38,40 +33,13 @@ impl Layer {
     ) -> Layer {
         Layer {
             x: Array3::zeros(x_shape),
-            wi: Array2::random(w_shape, Uniform::new(0, pool_size)),
-            bi: Array::random(b_shape, Uniform::new(0, pool_size)),
-            w: Array2::zeros(w_shape),
-            b: Array::zeros(b_shape),
+            w: Array2::random(w_shape, Uniform::new(0., 1.)),
+            b: Array::random(b_shape, Uniform::new(0., 1.)),
             d_z: Array3::zeros(x_shape),
             grad_w: Array2::zeros(w_shape),
             grad_b: Array::zeros(b_shape),
             activation,
         }
-    }
-
-    pub fn gather(&mut self, substrate: &Substrate) -> &mut Self {
-        self.w = self.wi.map(|ix| substrate.get(*ix));
-        return self;
-    }
-
-    pub fn shift_weights(&mut self, shift: &Array2<usize>) -> &mut Self {
-        self.wi += shift;
-        return self;
-    }
-
-    pub fn shift_bias(&mut self, shift: &Array1<usize>) -> &mut Self {
-        self.bi += shift;
-        return self;
-    }
-
-    pub fn assign_grad_w(&mut self, grad: Array2<f64>) -> &mut Self {
-        self.grad_w = grad;
-        self
-    }
-
-    pub fn assign_grad_b(&mut self, grad: Array1<f64>) -> &mut Self {
-        self.grad_b = grad;
-        self
     }
 
     pub fn forward(&mut self, x: Array3<f64>) -> Array3<f64> {
@@ -104,7 +72,7 @@ impl Layer {
         a_z
     }
 
-    pub fn backward(&mut self, grad_output: Array3<f64>) -> Array3<f64> {
+    pub fn backward(&mut self, grad_output: Array3<f64>, learning_rate: f64) -> Array3<f64> {
         let dz_batch_size = self.d_z.shape()[0];
         let dz_sequence_length = self.d_z.shape()[1];
         let dz_features = self.d_z.shape()[2];
@@ -141,11 +109,11 @@ impl Layer {
         let grad_b = grad_z.sum_axis(Axis(0));
 
         // Mean gradients instead of accumulating
-        let avg_grad_w = grad_w.mapv(|x| x / x_batch_size as f64);
-        let avg_grad_b = grad_b.mapv(|x| x / x_batch_size as f64);
+        let avg_grad_w = grad_w.mapv(|x| learning_rate * (x / x_batch_size as f64));
+        let avg_grad_b = grad_b.mapv(|x| learning_rate * (x / x_batch_size as f64));
 
-        self.grad_w -= &(avg_grad_w);
-        self.grad_b -= &(avg_grad_b);
+        self.w -= &(avg_grad_w);
+        self.b -= &(avg_grad_b);
 
         grad_input
             .into_shape((x_batch_size, x_sequence_length, x_features))
@@ -165,7 +133,6 @@ pub type Web = Vec<Layer>;
 #[derive(Serialize, Deserialize, Clone)]
 pub struct Manifold {
     #[serde(skip)]
-    substrate: Arc<Substrate>,
     d_in: usize,
     d_out: usize,
     web: Web,
@@ -178,13 +145,11 @@ pub struct Manifold {
 
 impl Manifold {
     pub fn new(
-        substrate: Arc<Substrate>,
         d_in: usize,
         d_out: usize,
         layers: Vec<usize>,
     ) -> Manifold {
         Manifold {
-            substrate,
             d_in,
             d_out,
             layers,
@@ -208,12 +173,7 @@ impl Manifold {
             .map(|_| rng.gen_range(breadth.clone()))
             .collect::<Vec<usize>>();
 
-        Manifold::new(Arc::new(Substrate::blank()), d_in, d_out, layers)
-    }
-
-    pub fn set_substrate(&mut self, substrate: Arc<Substrate>) -> &mut Self {
-        self.substrate = substrate;
-        self
+        Manifold::new(d_in, d_out, layers)
     }
 
     pub fn set_hidden_activation(&mut self, activation: Activations) -> &mut Self {
@@ -242,7 +202,6 @@ impl Manifold {
             b_shape = w_shape.1;
 
             self.web.push(Layer::new(
-                self.substrate.size,
                 x_shape,
                 w_shape,
                 b_shape,
@@ -256,19 +215,11 @@ impl Manifold {
         let b_shape = w_shape.1;
 
         self.web.push(Layer::new(
-            self.substrate.size,
             x_shape,
             w_shape,
             b_shape,
             Activations::Identity,
         ));
-        self
-    }
-
-    pub fn gather(&mut self) -> &mut Self {
-        for layer in self.web.iter_mut() {
-            layer.gather(&self.substrate);
-        }
         self
     }
 
@@ -291,32 +242,7 @@ impl Manifold {
         let mut grad_output = grad_output_i.insert_axis(Axis(1));
 
         for layer in self.web.iter_mut().rev() {
-            grad_output = layer.backward(grad_output);
-
-            let grad_b_dim = layer.grad_b.raw_dim();
-            let grad_w_dim = layer.grad_w.raw_dim();
-
-            let mut b_grad_reshaped = layer.grad_b.to_owned().insert_axis(Axis(1));
-            let mut b_link_reshaped = layer.bi.to_owned().insert_axis(Axis(1));
-
-            self.substrate
-                .highspeed(&mut layer.grad_w, &mut layer.wi, learning_rate);
-            self.substrate
-                .highspeed(&mut b_grad_reshaped, &mut b_link_reshaped, learning_rate);
-
-            layer
-                .shift_bias(&b_link_reshaped.remove_axis(Axis(1)))
-                .assign_grad_b(b_grad_reshaped.remove_axis(Axis(1)))
-                .gather(&self.substrate);
-
-            match self.gradient_retention {
-                GradientRetention::Zero => {
-                    layer
-                        .assign_grad_b(Array1::zeros(grad_b_dim))
-                        .assign_grad_w(Array2::zeros(grad_w_dim));
-                }
-                GradientRetention::Roll => (),
-            }
+            grad_output = layer.backward(grad_output, learning_rate);
         }
     }
 

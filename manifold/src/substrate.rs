@@ -91,7 +91,8 @@ impl Substrate {
         gradient_steps -= &actionable_steps;
 
         // Reverse the scaled gradient steps
-        *gradient = gradient_steps.mapv_into(|x| x / (step * learning_rate));
+        // [REVISION] Gradient doesnt change?
+        // *gradient = gradient_steps.mapv_into(|x| x / (step * learning_rate));
 
         // Extract values with amplitude > 1 out of gradient and leave the
         // 0<abs(x)<1 float values to be fed back into layer
@@ -112,6 +113,17 @@ impl Substrate {
             }
 
             return *x as usize;
+        });
+
+        // Chop off whole numbers
+        *gradient = gradient.map(|x| {
+            if *x < 0. {
+                let cut = x.ceil();
+                *x - cut
+            } else {
+                let cut = x.floor();
+                *x - cut
+            }
         });
 
         *link = delta;

@@ -1,9 +1,8 @@
-use manifold::nn::fc3::{GradientRetention, Manifold};
-use manifold::optimizers::mbgd3::MiniBatchGradientDescent;
+use manifold::nn::fc3_iso::{GradientRetention, Manifold};
+use manifold::optimizers::mbgd3_iso::MiniBatchGradientDescent;
 use manifold::Losses3;
 
 use manifold::Activations;
-use manifold::Substrate;
 
 use rand::{prelude::*, thread_rng};
 
@@ -36,20 +35,16 @@ fn main() {
         ty.push(_y);
     }
 
-    let substrate = Substrate::new(10000, 0.0..1.0).share();
-
-    let mut nn = Manifold::new(substrate, 2, 2, vec![4]);
+    let mut nn = Manifold::new(2, 2, vec![4]);
     nn.set_hidden_activation(Activations::Relu)
         .set_loss(Losses3::SoftmaxCrossEntropy)
-        .set_gradient_retention(GradientRetention::Roll)
-        .weave()
-        .gather();
+        .weave();
 
     let threes = MiniBatchGradientDescent::prepare(x, y);
 
     let mut trainer = MiniBatchGradientDescent::new(&mut nn);
     trainer
-        .set_learning_rate(0.1)
+        .set_learning_rate(0.01)
         .set_decay(0.999)
         .set_epochs(1000)
         .set_sample_size(100)
