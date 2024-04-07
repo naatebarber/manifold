@@ -1,6 +1,7 @@
 mod dense;
 mod dense_independent;
 mod dense_single;
+pub mod types;
 
 pub use dense::Layer as Dense;
 pub use dense_independent::Layer as DenseIndependent;

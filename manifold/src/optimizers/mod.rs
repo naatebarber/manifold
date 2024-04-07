@@ -1,5 +1,5 @@
 mod mbgd;
-mod optimizer;
+mod types;
 
 pub use mbgd::MiniBatchGradientDescent;
-pub use optimizer::Hyper;
+pub use types::Hyper;
