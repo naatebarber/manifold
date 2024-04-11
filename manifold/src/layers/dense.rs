@@ -131,6 +131,7 @@ impl Layer for Dense {
 
     fn gather(&mut self, substrate: &Substrate) {
         self.w = self.wi.map(|ix| substrate.get(*ix));
+        self.b = self.bi.map(|ix| substrate.get(*ix));
     }
 
     fn shift_weights(&mut self, shift: &Array2<usize>) {
