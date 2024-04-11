@@ -3,7 +3,6 @@ use manifold::nn::DNN;
 use manifold::optimizers::MiniBatchGradientDescent;
 use manifold::util::as_tensor;
 use manifold::Losses;
-
 use manifold::Activations;
 use manifold::Substrate;
 

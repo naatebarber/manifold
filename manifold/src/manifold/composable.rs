@@ -1,34 +1,35 @@
 use std::error::Error;
-use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use ndarray::{Array1, Array2, Array3, Axis};
-use rand::{thread_rng, Rng};
 
 use serde::{self, Deserialize, Serialize};
 
 use crate::activation::Activations;
+use crate::layers::types::{Layer, Layers};
 use crate::layers::Dense;
 use crate::loss::{Loss, Losses};
 use crate::substrate::Substrate;
 
 use super::types::{GradientRetention, Manifold};
 
-pub type LayerSchema = Vec<usize>;
-pub type Web = Vec<Dense>;
 
-#[derive(Serialize, Deserialize, Clone)]
+pub type LayerDefinition = (usize, Activations, Layers);
+pub type Web = Vec<Box<dyn Layer>>;
+
+#[derive(Serialize, Deserialize)]
 pub struct Composable {
     #[serde(skip)]
     substrate: Arc<Substrate>,
     d_in: usize,
     d_out: usize,
+    #[serde(skip)]
     web: Web,
+    layers: Vec<LayerDefinition>,
     hidden_activation: Activations,
     verbose: bool,
     gradient_retention: GradientRetention,
-    pub layers: LayerSchema,
     pub loss: Losses,
 }
 
@@ -37,13 +38,12 @@ impl Composable {
         substrate: Arc<Substrate>,
         d_in: usize,
         d_out: usize,
-        layers: Vec<usize>,
     ) -> Composable {
         Composable {
             substrate,
             d_in,
             d_out,
-            layers,
+            layers: Vec::new(),
             web: Web::new(),
             hidden_activation: Activations::Relu,
             verbose: false,
@@ -52,28 +52,14 @@ impl Composable {
         }
     }
 
-    pub fn dynamic(
-        d_in: usize,
-        d_out: usize,
-        breadth: Range<usize>,
-        depth: Range<usize>,
-    ) -> Composable {
-        let mut rng = thread_rng();
-        let depth = rng.gen_range(depth);
-        let layers = (0..depth)
-            .map(|_| rng.gen_range(breadth.clone()))
-            .collect::<Vec<usize>>();
-
-        Composable::new(Arc::new(Substrate::blank()), d_in, d_out, layers)
+    pub fn layer(&mut self, size: usize, activation: Activations, layer: Layers) -> &mut Self {
+        let ld: LayerDefinition = (size, activation, layer);
+        self.layers.push(ld);
+        self
     }
 
     pub fn set_substrate(&mut self, substrate: Arc<Substrate>) -> &mut Self {
         self.substrate = substrate;
-        self
-    }
-
-    pub fn set_hidden_activation(&mut self, activation: Activations) -> &mut Self {
-        self.hidden_activation = activation;
         self
     }
 
@@ -99,7 +85,7 @@ impl Composable {
     }
 
     pub fn load(serialized: &Vec<u8>) -> Result<Composable, Box<dyn Error>> {
-        Ok(bincode::deserialize(serialized)?)
+        Ok(bincode::deserialize::<Composable>(serialized)?)
     }
 }
 
@@ -110,31 +96,28 @@ impl Manifold for Composable {
         let mut b_shape: usize;
         let mut p_dim = self.d_in;
 
-        for layer_size in self.layers.iter() {
-            w_shape = (p_dim, *layer_size);
+        for layer_definition in self.layers.iter() {
+            let (size, activation, layer) = layer_definition;
+            w_shape = (p_dim, *size);
             b_shape = w_shape.1;
 
-            self.web.push(Dense::new(
-                self.substrate.size,
-                x_shape,
-                w_shape,
-                b_shape,
-                self.hidden_activation,
-            ));
-            p_dim = *layer_size;
+            self.web.push(Layers::wake(*layer, self.substrate.size, x_shape, w_shape, b_shape, *activation));
+
+            p_dim = *size;
             x_shape = (1, 1, w_shape.1);
         }
 
         let w_shape = (p_dim, self.d_out);
         let b_shape = w_shape.1;
 
-        self.web.push(Dense::new(
+        self.web.push(Box::new(Dense::new(
             self.substrate.size,
             x_shape,
             w_shape,
             b_shape,
             Activations::Identity,
-        ));
+        )));
+
         self
     }
 
@@ -159,27 +142,28 @@ impl Manifold for Composable {
         for layer in self.web.iter_mut().rev() {
             grad_output = layer.backward(grad_output);
 
-            let grad_b_dim = layer.grad_b.raw_dim();
-            let grad_w_dim = layer.grad_w.raw_dim();
+            let (mut grad_w, grad_b) = layer.gradients();
+            let (mut wi, bi) = layer.gradient_bindings();
 
-            let mut b_grad_reshaped = layer.grad_b.to_owned().insert_axis(Axis(1));
-            let mut b_link_reshaped = layer.bi.to_owned().insert_axis(Axis(1));
+            let grad_b_dim = grad_b.raw_dim();
+            let grad_w_dim = grad_w.raw_dim();
+
+            let mut b_grad_reshaped = grad_b.insert_axis(Axis(1));
+            let mut b_link_reshaped = bi.insert_axis(Axis(1));
 
             self.substrate
-                .highspeed(&mut layer.grad_w, &mut layer.wi, learning_rate);
+                .highspeed(&mut grad_w, &mut wi, learning_rate);
             self.substrate
                 .highspeed(&mut b_grad_reshaped, &mut b_link_reshaped, learning_rate);
 
-            layer
-                .shift_bias(&b_link_reshaped.remove_axis(Axis(1)))
-                .assign_grad_b(b_grad_reshaped.remove_axis(Axis(1)))
-                .gather(&self.substrate);
+            layer.shift_bias(&b_link_reshaped.remove_axis(Axis(1)));
+            layer.assign_grad_b(b_grad_reshaped.remove_axis(Axis(1)));
+            layer.gather(&self.substrate);
 
             match self.gradient_retention {
                 GradientRetention::Zero => {
-                    layer
-                        .assign_grad_b(Array1::zeros(grad_b_dim))
-                        .assign_grad_w(Array2::zeros(grad_w_dim));
+                    layer.assign_grad_b(Array1::zeros(grad_b_dim));
+                    layer.assign_grad_w(Array2::zeros(grad_w_dim));
                 }
                 GradientRetention::Roll => (),
             }

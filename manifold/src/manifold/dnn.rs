@@ -10,6 +10,7 @@ use serde::{self, Deserialize, Serialize};
 
 use crate::activation::Activations;
 use crate::layers::Dense;
+use crate::layers::types::Layer;
 use crate::loss::{Loss, Losses};
 use crate::substrate::Substrate;
 
@@ -160,16 +161,14 @@ impl Manifold for DNN {
             self.substrate
                 .highspeed(&mut b_grad_reshaped, &mut b_link_reshaped, learning_rate);
 
-            layer
-                .shift_bias(&b_link_reshaped.remove_axis(Axis(1)))
-                .assign_grad_b(b_grad_reshaped.remove_axis(Axis(1)))
-                .gather(&self.substrate);
+            layer.shift_bias(&b_link_reshaped.remove_axis(Axis(1)));
+            layer.assign_grad_b(b_grad_reshaped.remove_axis(Axis(1)));
+            layer.gather(&self.substrate);
 
             match self.gradient_retention {
                 GradientRetention::Zero => {
-                    layer
-                        .assign_grad_b(Array1::zeros(grad_b_dim))
-                        .assign_grad_w(Array2::zeros(grad_w_dim));
+                    layer.assign_grad_b(Array1::zeros(grad_b_dim));
+                    layer.assign_grad_w(Array2::zeros(grad_w_dim));
                 }
                 GradientRetention::Roll => (),
             }

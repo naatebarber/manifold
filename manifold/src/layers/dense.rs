@@ -9,8 +9,10 @@ use serde::{self, Deserialize, Serialize};
 use crate::activation::Activations;
 use crate::substrate::Substrate;
 
+use super::types::Layer;
+
 #[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct Layer {
+pub struct Dense {
     pub x: Array3<f64>,
     pub wi: Array2<usize>,
     pub bi: Array1<usize>,
@@ -22,15 +24,15 @@ pub struct Layer {
     pub activation: Activations,
 }
 
-impl Layer {
+impl Dense {
     pub fn new(
         pool_size: usize,
         x_shape: (usize, usize, usize),
         w_shape: (usize, usize),
         b_shape: usize,
         activation: Activations,
-    ) -> Layer {
-        Layer {
+    ) -> Dense {
+        Dense {
             x: Array3::zeros(x_shape),
             wi: Array2::random(w_shape, Uniform::new(0, pool_size)),
             bi: Array::random(b_shape, Uniform::new(0, pool_size)),
@@ -42,33 +44,10 @@ impl Layer {
             activation,
         }
     }
+}
 
-    pub fn gather(&mut self, substrate: &Substrate) -> &mut Self {
-        self.w = self.wi.map(|ix| substrate.get(*ix));
-        return self;
-    }
-
-    pub fn shift_weights(&mut self, shift: &Array2<usize>) -> &mut Self {
-        self.wi += shift;
-        return self;
-    }
-
-    pub fn shift_bias(&mut self, shift: &Array1<usize>) -> &mut Self {
-        self.bi += shift;
-        return self;
-    }
-
-    pub fn assign_grad_w(&mut self, grad: Array2<f64>) -> &mut Self {
-        self.grad_w = grad;
-        self
-    }
-
-    pub fn assign_grad_b(&mut self, grad: Array1<f64>) -> &mut Self {
-        self.grad_b = grad;
-        self
-    }
-
-    pub fn forward(&mut self, x: Array3<f64>) -> Array3<f64> {
+impl Layer for Dense {
+    fn forward(&mut self, x: Array3<f64>) -> Array3<f64> {
         let batch_size = x.shape()[0];
         let sequence_length = x.shape()[1];
         let features = x.shape()[2];
@@ -98,7 +77,7 @@ impl Layer {
         a_z
     }
 
-    pub fn backward(&mut self, grad_output: Array3<f64>) -> Array3<f64> {
+    fn backward(&mut self, grad_output: Array3<f64>) -> Array3<f64> {
         let dz_batch_size = self.d_z.shape()[0];
         let dz_sequence_length = self.d_z.shape()[1];
         let dz_features = self.d_z.shape()[2];
@@ -144,5 +123,33 @@ impl Layer {
         grad_input
             .into_shape((x_batch_size, x_sequence_length, x_features))
             .unwrap()
+    }
+    
+    fn gradients(&self) -> (Array2<f64>, Array1<f64>) {
+        (self.grad_w.clone(), self.grad_b.clone())
+    }
+
+    fn gather(&mut self, substrate: &Substrate) {
+        self.w = self.wi.map(|ix| substrate.get(*ix));
+    }
+
+    fn shift_weights(&mut self, shift: &Array2<usize>) {
+        self.wi += shift;
+    }
+
+    fn shift_bias(&mut self, shift: &Array1<usize>) {
+        self.bi += shift;
+    }
+
+    fn assign_grad_w(&mut self, grad: Array2<f64>) {
+        self.grad_w = grad;
+    }
+
+    fn assign_grad_b(&mut self, grad: Array1<f64>) {
+        self.grad_b = grad;
+    }
+
+    fn gradient_bindings(&self) -> (Array2<usize>, Array1<usize>) {
+        (self.wi.clone(), self.bi.clone())
     }
 }
