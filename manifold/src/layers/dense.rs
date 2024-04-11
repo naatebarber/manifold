@@ -138,8 +138,8 @@ impl Layer for Dense {
         self.wi += shift;
     }
 
-    fn shift_bias(&mut self, shift: &Array1<usize>) {
-        self.bi += shift;
+    fn assign_bi(&mut self, bi: &Array1<usize>) {
+        self.bi = bi.clone();
     }
 
     fn assign_grad_w(&mut self, grad: Array2<f64>) {

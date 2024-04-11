@@ -158,7 +158,7 @@ impl Manifold for Composable {
             self.substrate
                 .highspeed(&mut b_grad_reshaped, &mut b_link_reshaped, learning_rate);
 
-            layer.shift_bias(&b_link_reshaped.remove_axis(Axis(1)));
+            layer.assign_bi(&b_link_reshaped.remove_axis(Axis(1)));
             layer.assign_grad_b(b_grad_reshaped.remove_axis(Axis(1)));
             layer.gather(&self.substrate);
 

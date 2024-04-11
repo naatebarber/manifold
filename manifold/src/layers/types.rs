@@ -15,7 +15,7 @@ pub trait Layer {
     fn gradients(&self) -> (Array2<f64>, Array1<f64>);
     fn gather(&mut self, substrate: &Substrate);
     fn shift_weights(&mut self, shift: &Array2<usize>);
-    fn shift_bias(&mut self, shift: &Array1<usize>);
+    fn assign_bi(&mut self, shift: &Array1<usize>);
     fn assign_grad_w(&mut self, grad: Array2<f64>);
     fn assign_grad_b(&mut self, grad: Array1<f64>);
     fn gradient_bindings(&self) -> (Array2<usize>, Array1<usize>);
