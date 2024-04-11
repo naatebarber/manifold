@@ -2,8 +2,8 @@ use manifold::nn::types::{GradientRetention, Manifold};
 use manifold::nn::DNN;
 use manifold::optimizers::MiniBatchGradientDescent;
 use manifold::util::as_tensor;
-use manifold::Losses;
 use manifold::Activations;
+use manifold::Losses;
 use manifold::Substrate;
 
 use rand::{prelude::*, thread_rng};

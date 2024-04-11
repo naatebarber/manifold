@@ -124,7 +124,7 @@ impl Layer for Dense {
             .into_shape((x_batch_size, x_sequence_length, x_features))
             .unwrap()
     }
-    
+
     fn gradients(&self) -> (Array2<f64>, Array1<f64>) {
         (self.grad_w.clone(), self.grad_b.clone())
     }

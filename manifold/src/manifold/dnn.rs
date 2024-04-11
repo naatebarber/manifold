@@ -9,8 +9,8 @@ use rand::{thread_rng, Rng};
 use serde::{self, Deserialize, Serialize};
 
 use crate::activation::Activations;
-use crate::layers::Dense;
 use crate::layers::types::Layer;
+use crate::layers::Dense;
 use crate::loss::{Loss, Losses};
 use crate::substrate::Substrate;
 

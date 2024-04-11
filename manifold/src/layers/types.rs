@@ -1,7 +1,7 @@
+use super::Dense;
+use crate::{Activations, Substrate};
 use ndarray::{Array1, Array2, Array3};
 use serde::{Deserialize, Serialize};
-use crate::{Activations, Substrate};
-use super::Dense;
 
 pub trait IsolatedLayer {
     fn forward(&mut self, x: Array3<f64>) -> Array3<f64>;
@@ -23,7 +23,7 @@ pub trait Layer {
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum Layers {
-    Dense
+    Dense,
 }
 
 impl Layers {
@@ -36,7 +36,7 @@ impl Layers {
         activation: Activations,
     ) -> Box<dyn Layer> {
         match layer {
-            Layers::Dense => Box::new(Dense::new(pool_size, x_shape, w_shape, b_shape, activation))
+            Layers::Dense => Box::new(Dense::new(pool_size, x_shape, w_shape, b_shape, activation)),
         }
     }
 }

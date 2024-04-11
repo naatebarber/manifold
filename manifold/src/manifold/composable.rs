@@ -14,7 +14,6 @@ use crate::substrate::Substrate;
 
 use super::types::{GradientRetention, Manifold};
 
-
 pub type LayerDefinition = (usize, Activations, Layers);
 pub type Web = Vec<Box<dyn Layer>>;
 
@@ -34,11 +33,7 @@ pub struct Composable {
 }
 
 impl Composable {
-    pub fn new(
-        substrate: Arc<Substrate>,
-        d_in: usize,
-        d_out: usize,
-    ) -> Composable {
+    pub fn new(substrate: Arc<Substrate>, d_in: usize, d_out: usize) -> Composable {
         Composable {
             substrate,
             d_in,
@@ -101,7 +96,14 @@ impl Manifold for Composable {
             w_shape = (p_dim, *size);
             b_shape = w_shape.1;
 
-            self.web.push(Layers::wake(*layer, self.substrate.size, x_shape, w_shape, b_shape, *activation));
+            self.web.push(Layers::wake(
+                *layer,
+                self.substrate.size,
+                x_shape,
+                w_shape,
+                b_shape,
+                *activation,
+            ));
 
             p_dim = *size;
             x_shape = (1, 1, w_shape.1);
