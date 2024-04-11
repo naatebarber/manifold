@@ -6,9 +6,14 @@ Weight separated machine learning framework.
  - `manifold::nn::fc::Manifold` Fully connected feedforward network.
 
 ## Trainer types:
- - `manifold::nn::Trainer` Backpropagation trainer with learning rate, decay, early stopping and more.
- - `manifold::async_neat::Neat` Distributed async NEAT implementation (Neuro Evolution of Augmenting Topologies) - mad fast.
- - `manifold::sync_neat::Neat` Distributed sync NEAT implementation (Neuro Evolution of Augmenting Topologies) - slower.
+ - `manifold::optimizers::MiniBatchGradientDescent` MBGD trainer with learning rate, decay, early stopping and more.
+ - `manifold::neat::Neat` Distributed async NEAT implementation (Neuro Evolution of Augmenting Topologies) using ZMQ workers.
+
+## Layer types:
+ - `manifold::layers::Dense` Dense (fully connected) layer.
+
+## Network types:
+ - `manifold::nn::DNN` Adjustable size dense network
 
 ## Substrate types:
  - `manifold::Substrate` Basic ringbuffer substrate using a Uniform distribution. No curvature.
@@ -16,11 +21,6 @@ Weight separated machine learning framework.
 ### TODO:
  - make hyperparameters trainable via neat as well as network breadth and depth
  - add self healing to neat async
- - [done] Add mutli-core distributed NEAT.
- - [done] Make manifolds serializable into binary.
- - [done] Make substrates serializable into binary.
- - [bad idea] Make neat that tests all architectures in a range.
- - [done] Make flow-state neat, where worker state doesnt have to be synced. 
- - [done] Pass generic early stopping params to neat.
  - Add multi-machine distributed NEAT.
  - Add curvature property to substrate, making it harder to reach edges.
+ - Add CNN
