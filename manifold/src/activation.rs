@@ -39,7 +39,7 @@ impl Activation for Relu {
             if *v < 0. {
                 return 0.;
             }
-            return *v;
+            1.
         })
     }
 }
