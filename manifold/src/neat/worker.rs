@@ -113,7 +113,8 @@ pub fn worker(
             while let Some(chunk) = chunks.pop_front() {
                 let x_data = chunk.0;
                 let y_data = chunk.1;
-                let (x, y) = as_tensor(x_data, y_data);
+                let x = as_tensor(x_data);
+                let y = as_tensor(y_data);
 
                 let nn = manifold.set_substrate(substrate.clone());
                 let mut trainer = MiniBatchGradientDescent::new(nn);

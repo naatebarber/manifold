@@ -17,14 +17,10 @@ pub fn timestamp() -> Result<u64, Box<dyn Error>> {
     Ok(in_ms)
 }
 
-pub fn as_tensor(x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> (Array3<f64>, Array3<f64>) {
+pub fn as_tensor(x: Vec<Vec<f64>>) -> Array3<f64> {
     let x_a2 = x
         .into_iter()
         .map(|xv| Array1::from(xv).insert_axis(Axis(0)))
-        .collect::<Vec<Array2<f64>>>();
-    let y_a2 = y
-        .into_iter()
-        .map(|yv| Array1::from(yv).insert_axis(Axis(0)))
         .collect::<Vec<Array2<f64>>>();
 
     let x_3 = stack(
@@ -32,11 +28,6 @@ pub fn as_tensor(x: Vec<Vec<f64>>, y: Vec<Vec<f64>>) -> (Array3<f64>, Array3<f64
         &x_a2.iter().map(|ar| ar.view()).collect::<Vec<_>>(),
     )
     .unwrap();
-    let y_3 = stack(
-        Axis(0),
-        &y_a2.iter().map(|ar| ar.view()).collect::<Vec<_>>(),
-    )
-    .unwrap();
 
-    (x_3, y_3)
+    x_3
 }

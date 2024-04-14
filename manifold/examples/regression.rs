@@ -43,7 +43,8 @@ fn main() {
         .weave()
         .gather();
 
-    let threes = as_tensor(x, y);
+    let x = as_tensor(x);
+    let y = as_tensor(y);
 
     let mut trainer = MiniBatchGradientDescent::new(&mut nn);
     trainer
@@ -52,6 +53,6 @@ fn main() {
         .set_epochs(1000)
         .set_sample_size(100)
         .verbose()
-        .train(&threes.0, &threes.1)
+        .train(&x, &y)
         .loss_graph();
 }

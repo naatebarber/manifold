@@ -9,6 +9,7 @@ pub mod substrate;
 pub mod util;
 
 pub use activation::Activations;
+pub use layers::Layers;
 pub use loss::Losses;
 pub use manifold as nn;
 pub use neat::Neat;
