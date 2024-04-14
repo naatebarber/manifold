@@ -14,7 +14,6 @@ fn main() {
         .weave();
 
     let x = util::as_tensor(vec![vec![3., 2.]]);
-    let datay = util::as_tensor(vec![vec![4., 5.]]);
 
     let val = nn.forward(x);
     println!("Val {:?}", val);
